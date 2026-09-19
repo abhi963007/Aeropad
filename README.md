@@ -17,6 +17,7 @@
 <br/>
 
 [Features](#-key-features) •
+[Interface](#-interface-preview) •
 [Why AeroPad?](#-why-aeropad-vs-traditional-solutions) •
 [Architecture](#-system-architecture) •
 [HID Specifications](#-hid-report-descriptor-specification) •
@@ -24,6 +25,15 @@
 [Pairing Guide](#-pairing--quick-start-guide) •
 [Roadmap](#-development-roadmap)
 
+</div>
+
+---
+
+## 📱 Interface Preview
+
+<div align="center">
+  <img src="assets/ui.png" width="380" style="border-radius: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);" alt="AeroPad Minimalist Trackpad UI" />
+  <p><em>Official AeroPad Minimalist Trackpad Interface — Clean, distraction-free, maximum surface area.</em></p>
 </div>
 
 ---
