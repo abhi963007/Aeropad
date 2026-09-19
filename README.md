@@ -8,8 +8,8 @@
 ---
 
 [![Platform](https://img.shields.io/badge/Platform-Android%209.0%2B%20(API%2028%2B)-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://developer.android.com)
-[![Language](https://img.shields.io/badge/Language-Kotlin-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white)](https://kotlinlang.org)
-[![UI](https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4?style=for-the-badge&logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
+[![Framework](https://img.shields.io/badge/Framework-Flutter-02569B?style=for-the-badge&logo=flutter&logoColor=white)](https://flutter.dev)
+[![Android Bridge](https://img.shields.io/badge/Android%20Bridge-Kotlin-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white)](https://kotlinlang.org)
 [![Protocol](https://img.shields.io/badge/Protocol-Bluetooth%20HID-0082FC?style=for-the-badge&logo=bluetooth&logoColor=white)](https://en.wikipedia.org/wiki/Human_interface_device)
 [![Host Software](https://img.shields.io/badge/Host%20Software-Zero%20(100%25%20Plug%20%26%20Play)-22C55E?style=for-the-badge)]()
 [![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)](LICENSE)
@@ -79,7 +79,7 @@ When you pair your phone with your computer, the host operating system recognize
 ```mermaid
 flowchart TD
     subgraph MobileApp ["📱 Android Device (AeroPad)"]
-        UI["Touchpad Surface UI\n(Jetpack Compose 120Hz)"]
+        UI["Touchpad Surface UI\n(Flutter)\n"]
         GE["Gesture Engine\n(Delta X, Delta Y, Taps, Velocity Curve)"]
         HID_Service["Bluetooth HID Service\n(android.bluetooth.BluetoothHidDevice)"]
         Descriptor["HID Mouse Descriptor\n(Standard 3-Button + Scroll Wheel)"]
@@ -200,34 +200,39 @@ AeroPad conforms to the universal Bluetooth HID standard, making it natively com
    5. Select **AeroPad** from the list of available devices.
    6. Confirm pairing. Once connected, your phone's screen immediately starts controlling the computer cursor!
 
+## 🛠️ Development Setup
+
+This repository is a Flutter Android application. Flutter renders the interface and handles gestures; the Android Kotlin layer exposes the native `BluetoothHidDevice` API through `com.aeropad/hid` and `com.aeropad/hid_state` platform channels.
+
+```bash
+flutter pub get
+flutter analyze
+flutter test
+flutter build apk --debug
+```
+
+The debug APK is generated at `build/app/outputs/flutter-apk/app-debug.apk`.
+
+Android Studio or the Android SDK is required for APK builds. Bluetooth HID behavior must be tested on a physical Android 9+ device because emulators do not provide the required HID peripheral profile.
+
 ---
 
 ## 🏗️ Project Structure
 
 ```text
 AeroPad/
-├── app/
-│   ├── src/main/
-│   │   ├── java/com/aeropad/
-│   │   │   ├── bluetooth/
-│   │   │   │   ├── HidDeviceManager.kt        # BluetoothHidDevice controller
-│   │   │   │   ├── HidReportDescriptor.kt     # USB-IF mouse descriptor bytes
-│   │   │   │   └── BluetoothStateReceiver.kt  # Adapter state monitoring
-│   │   │   ├── gesture/
-│   │   │   │   ├── GestureEngine.kt           # Touch event math & velocity curve
-│   │   │   │   ├── PointerTracker.kt          # Multi-touch delta calculator
-│   │   │   │   └── HapticFeedbackManager.kt   # Tactile click vibrations
-│   │   │   └── ui/
-│   │   │       ├── TrackpadScreen.kt          # Main touchpad surface UI
-│   │   │       ├── SettingsDialog.kt          # Sensitivity & acceleration config
-│   │   │       └── theme/                     # Dark futuristic aesthetic
-│   │   └── AndroidManifest.xml
-│   └── build.gradle.kts
-├── docs/
-│   ├── Project_Abstract.docx                  # Full research specifications
-│   └── Project_Abstract.doc
+├── android/
+│   └── app/src/main/kotlin/com/aeropad/aeropad/
+│       └── MainActivity.kt                    # Flutter MethodChannel + Bluetooth HID bridge
+├── lib/
+│   └── main.dart                               # Flutter UI, gestures, and HID calls
+├── test/
+│   └── widget_test.dart                        # Flutter widget smoke tests
+├── Project_Abstract.docx                       # Full research specifications
+├── Project_Abstract.doc
 ├── assets/
 │   └── banner.png                             # Project visual banner
+├── pubspec.yaml                                # Flutter dependencies and app metadata
 ├── README.md
 ├── LICENSE
 └── .gitignore
@@ -240,10 +245,13 @@ AeroPad/
 - [x] Concept & Architectural Design
 - [x] Standard HID Mouse Report Descriptor formulation
 - [x] Project Abstract & Technical Documentation
-- [ ] Core Android Studio & Gradle project scaffolding
-- [ ] `BluetoothHidDevice` registration & state callback pipeline
-- [ ] Jetpack Compose high-refresh-rate Touchpad surface
-- [ ] Two-finger scroll & acceleration algorithms
+- [x] Flutter Android project scaffolding
+- [x] `BluetoothHidDevice` registration & state callback pipeline
+- [x] Flutter touchpad surface and dark AeroPad interface
+- [x] Two-finger scroll & acceleration algorithms
+- [ ] Double-tap-and-hold drag-and-drop gesture
+- [ ] Volume key click triggers
+- [ ] Settings panel for sensitivity and acceleration
 - [ ] Air Mouse Mode (Gyroscope / Accelerometer based pointing for presentations)
 - [ ] Keyboard input extension (HID Keyboard profile integration)
 

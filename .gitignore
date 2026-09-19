@@ -57,3 +57,9 @@ google-services.json
 # OS specific
 .DS_Store
 Thumbs.db
+
+# Flutter generated files
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
