@@ -9,13 +9,13 @@ import android.bluetooth.BluetoothHidDeviceAppQosSettings
 import android.bluetooth.BluetoothHidDeviceAppSdpSettings
 import android.bluetooth.BluetoothProfile
 import android.content.pm.PackageManager
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import androidx.core.app.ActivityCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
-import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import java.util.concurrent.Executors
 
@@ -28,6 +28,14 @@ class MainActivity : FlutterActivity() {
         MethodChannel(engine.dartExecutor.binaryMessenger, "com.aeropad/hid").setMethodCallHandler { call, result ->
             when (call.method) {
                 "connect" -> { hid.connect(); result.success(null) }
+                "makeDiscoverable" -> { hid.makeDiscoverable(); result.success(null) }
+                "getBondedDevices" -> { result.success(hid.bondedDevices()) }
+                "connectToDevice" -> {
+                    val address = call.argument<String>("address")
+                    if (address == null) result.error("INVALID_ADDRESS", "A Bluetooth address is required", null)
+                    else { hid.connectToDevice(address); result.success(null) }
+                }
+                "disconnect" -> { hid.disconnect(); result.success(null) }
                 "sendReport" -> {
                     hid.sendReport(
                         call.argument<Int>("buttons") ?: 0,
@@ -47,20 +55,35 @@ class MainActivity : FlutterActivity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == HidController.PERMISSION_REQUEST && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) hid.connect()
     }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        hid.onActivityResult(requestCode, resultCode)
+    }
 }
 
 private class HidController(private val activity: MainActivity) : EventChannel.StreamHandler {
-    companion object { const val PERMISSION_REQUEST = 4102 }
+    companion object {
+        const val PERMISSION_REQUEST = 4102
+        const val ENABLE_REQUEST = 4103
+        const val DISCOVERABLE_REQUEST = 4104
+    }
     private val adapter = BluetoothAdapter.getDefaultAdapter()
     private val executor = Executors.newSingleThreadExecutor()
     private var hid: BluetoothHidDevice? = null
     private var host: BluetoothDevice? = null
     private var sink: EventChannel.EventSink? = null
+    private var pendingAddress: String? = null
+    private var pendingDiscoverable = false
 
     override fun onListen(arguments: Any?, events: EventChannel.EventSink?) { sink = events; emit("disconnected") }
     override fun onCancel(arguments: Any?) { sink = null }
 
-    private fun emit(value: String) { activity.runOnUiThread { sink?.success(value) } }
+    private fun emit(state: String, name: String? = null) {
+        activity.runOnUiThread {
+            sink?.success(mapOf("state" to state, "name" to (name ?: "")))
+        }
+    }
 
     @SuppressLint("MissingPermission")
     fun connect() {
@@ -71,7 +94,12 @@ private class HidController(private val activity: MainActivity) : EventChannel.S
                 return
             }
         }
-        if (adapter == null || !adapter.isEnabled) return
+        if (adapter == null) return
+        if (!adapter.isEnabled) {
+            pendingDiscoverable = false
+            activity.startActivityForResult(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE), ENABLE_REQUEST)
+            return
+        }
         adapter.getProfileProxy(activity, object : BluetoothProfile.ServiceListener {
             override fun onServiceConnected(profile: Int, proxy: BluetoothProfile) {
                 hid = proxy as BluetoothHidDevice
@@ -81,9 +109,65 @@ private class HidController(private val activity: MainActivity) : EventChannel.S
                     BluetoothHidDeviceAppQosSettings(BluetoothHidDeviceAppQosSettings.SERVICE_BEST_EFFORT, 800, 9, 0, 0, 0),
                     null, executor, callback
                 )
+                hid?.let { onHidReady() }
             }
             override fun onServiceDisconnected(profile: Int) { hid = null; emit("disconnected") }
         }, BluetoothProfile.HID_DEVICE)
+    }
+
+    @SuppressLint("MissingPermission")
+    fun makeDiscoverable() {
+        if (adapter == null) return
+        if (!adapter.isEnabled) {
+            pendingDiscoverable = true
+            activity.startActivityForResult(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE), ENABLE_REQUEST)
+            return
+        }
+        activity.startActivityForResult(
+            Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE).putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300),
+            DISCOVERABLE_REQUEST
+        )
+        emit("discoverable")
+        connect()
+    }
+
+    @SuppressLint("MissingPermission")
+    fun bondedDevices(): List<Map<String, String>> {
+        if (adapter == null || !adapter.isEnabled) return emptyList()
+        return adapter.bondedDevices.map { device ->
+            mapOf("name" to (device.name ?: "Unknown device"), "address" to device.address)
+        }.sortedBy { it["name"] }
+    }
+
+    @SuppressLint("MissingPermission")
+    fun connectToDevice(address: String) {
+        if (adapter == null || !adapter.isEnabled) {
+            pendingAddress = address
+            connect()
+            return
+        }
+        val device = adapter.getRemoteDevice(address)
+        pendingAddress = address
+        if (hid == null) connect()
+        else hid?.connect(device)
+    }
+
+    @SuppressLint("MissingPermission")
+    fun disconnect() {
+        host?.let { hid?.disconnect(it) }
+        host = null
+        emit("disconnected")
+    }
+
+    fun onActivityResult(requestCode: Int, resultCode: Int) {
+        if (requestCode == ENABLE_REQUEST && resultCode == android.app.Activity.RESULT_OK) {
+            if (pendingDiscoverable) {
+                pendingDiscoverable = false
+                makeDiscoverable()
+            } else {
+                pendingAddress?.let { connectToDevice(it) } ?: connect()
+            }
+        }
     }
 
     private val callback = object : BluetoothHidDevice.Callback() {
@@ -93,7 +177,12 @@ private class HidController(private val activity: MainActivity) : EventChannel.S
         }
         override fun onConnectionStateChanged(device: BluetoothDevice, state: Int) {
             host = device
-            emit(if (state == BluetoothProfile.STATE_CONNECTED) "connected" else if (state == BluetoothProfile.STATE_CONNECTING) "discoverable" else "disconnected")
+            emit(
+                if (state == BluetoothProfile.STATE_CONNECTED) "connected"
+                else if (state == BluetoothProfile.STATE_CONNECTING) "discoverable"
+                else "disconnected",
+                if (state == BluetoothProfile.STATE_CONNECTED) device.name else null
+            )
         }
         override fun onGetReport(device: BluetoothDevice, type: Byte, id: Byte, bufferSize: Int) { hid?.replyReport(device, type, id, byteArrayOf(0, 0, 0, 0)) }
         override fun onSetReport(device: BluetoothDevice, type: Byte, id: Byte, data: ByteArray) = Unit
@@ -106,5 +195,13 @@ private class HidController(private val activity: MainActivity) : EventChannel.S
         val device = host ?: return
         val data = byteArrayOf(buttons.coerceIn(0, 7).toByte(), dx.coerceIn(-127, 127).toByte(), dy.coerceIn(-127, 127).toByte(), wheel.coerceIn(-127, 127).toByte())
         hid?.sendReport(device, 0, data)
+    }
+
+    fun onHidReady() {
+        pendingAddress?.let { address ->
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || ActivityCompat.checkSelfPermission(activity, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED) {
+                adapter?.getRemoteDevice(address)?.let { hid?.connect(it) }
+            }
+        }
     }
 }
