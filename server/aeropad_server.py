@@ -89,6 +89,14 @@ class AeroPadServer:
                 except (OSError, UnicodeDecodeError, json.JSONDecodeError, KeyError, ValueError) as error:
                     print(f"[AeroPad] Ignored packet: {error}")
 
+    def _broadcast_targets(self) -> list[str]:
+        targets = {"255.255.255.255"}
+        for ip in self.ip_addresses:
+            parts = ip.split(".")
+            if len(parts) == 4:
+                targets.add(f"{parts[0]}.{parts[1]}.{parts[2]}.255")
+        return sorted(targets)
+
     def discovery_loop(self) -> None:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as beacon:
             beacon.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
@@ -100,8 +108,13 @@ class AeroPadServer:
                 try:
                     now = time.monotonic()
                     if now >= next_beacon:
-                        beacon.sendto(self.response(), ("255.255.255.255", DISCOVERY_PORT))
-                        next_beacon = now + 2.0
+                        targets = self._broadcast_targets()
+                        for target in targets:
+                            try:
+                                beacon.sendto(self.response(), (target, DISCOVERY_PORT))
+                            except OSError:
+                                pass
+                        next_beacon = now + 1.5
                     try:
                         raw, address = beacon.recvfrom(2048)
                     except socket.timeout:

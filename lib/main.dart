@@ -36,12 +36,6 @@ class NetworkMouseClient {
   final _status = StreamController<NetworkStatus>.broadcast();
   final _pcs = StreamController<List<DiscoveredPc>>.broadcast();
   DiscoveredPc? _connected;
-  static const _probeAddresses = <String>[
-    '192.168.137.1',
-    '192.168.43.1',
-    '127.0.0.1',
-    '255.255.255.255',
-  ];
 
   Stream<NetworkStatus> get statuses => _status.stream;
   Stream<List<DiscoveredPc>> get discoveries => _pcs.stream;
@@ -70,14 +64,52 @@ class NetworkMouseClient {
   Future<void> discover() async {
     await startIfNeeded();
     final payload = utf8.encode(jsonEncode({'type': 'AEROPAD_DISCOVERY'}));
-    for (final address in _probeAddresses) {
+    final targets = <String>{
+      '255.255.255.255',
+      '192.168.137.1',
+      '192.168.137.255',
+      '192.168.43.1',
+      '192.168.43.255',
+      '192.168.0.255',
+      '192.168.0.3',
+      '192.168.1.255',
+      '192.168.29.255',
+      '192.168.31.255',
+      '127.0.0.1',
+    };
+
+    try {
+      final interfaces = await NetworkInterface.list(
+        type: InternetAddressType.IPv4,
+        includeLinkLocal: false,
+      );
+      for (final iface in interfaces) {
+        for (final addr in iface.addresses) {
+          final ip = addr.address;
+          if (ip.startsWith('127.')) continue;
+          final parts = ip.split('.');
+          if (parts.length == 4) {
+            final subnet = '${parts[0]}.${parts[1]}.${parts[2]}';
+            targets.add('$subnet.255');
+            targets.add('$subnet.1');
+            for (var i = 2; i <= 25; i++) {
+              targets.add('$subnet.$i');
+            }
+          }
+        }
+      }
+    } catch (_) {}
+
+    for (final address in targets) {
       try {
         _socket!.send(payload, InternetAddress(address), discoveryPort);
       } on SocketException {
-        // A gateway may not exist on the current network; continue probing.
+        // Continue probing other targets
       }
     }
-    _status.add(const NetworkStatus(NetworkState.searching));
+    if (_connected == null) {
+      _status.add(const NetworkStatus(NetworkState.searching));
+    }
   }
 
   Future<void> startIfNeeded() async {
@@ -174,7 +206,6 @@ class _TrackpadPageState extends State<TrackpadPage> {
   final Map<int, Offset> _pointers = {};
   StreamSubscription<NetworkStatus>? _statusSubscription;
   NetworkState _state = NetworkState.searching;
-  String _deviceName = '';
   String _address = '';
   double _sensitivity = 1;
   bool _invertScroll = false;
@@ -195,7 +226,6 @@ class _TrackpadPageState extends State<TrackpadPage> {
       if (!mounted) return;
       setState(() {
         _state = status.state;
-        _deviceName = status.name;
         _address = status.address;
       });
     });
@@ -209,11 +239,10 @@ class _TrackpadPageState extends State<TrackpadPage> {
     super.dispose();
   }
 
-  String get _status => switch (_state) {
-    NetworkState.connected =>
-      'Connected: ${_deviceName.isEmpty ? (_address.isEmpty ? "Windows PC" : _address) : _deviceName}',
-    NetworkState.searching => 'Searching for PC on Wi-Fi...',
-    NetworkState.disconnected => 'Disconnected (Tap to search)',
+  Color get _indicatorColor => switch (_state) {
+    NetworkState.connected => const Color(0xff2ecc71),
+    NetworkState.searching => const Color(0xffffc857),
+    NetworkState.disconnected => const Color(0xffff5252),
   };
 
   int _accelerate(double value) {
@@ -366,57 +395,45 @@ class _TrackpadPageState extends State<TrackpadPage> {
           children: [
             Row(
               children: [
-                const Text(
-                  'AeroPad',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-                const Spacer(),
                 GestureDetector(
                   onTap: () {
                     if (_state == NetworkState.disconnected) {
                       _network.discover();
+                    } else {
+                      _openSettings();
                     }
-                    _openSettings();
                   },
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 9,
-                        height: 9,
+                  child: Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: const Color(0xff121316),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: const Color(0xff202226),
+                        width: 1,
+                      ),
+                    ),
+                    child: Center(
+                      child: Container(
+                        width: 10,
+                        height: 10,
                         decoration: BoxDecoration(
-                          color: _state == NetworkState.connected
-                              ? const Color(0xff2ecc71)
-                              : _state == NetworkState.searching
-                              ? const Color(0xffffc857)
-                              : const Color(0xff8d939b),
+                          color: _indicatorColor,
                           shape: BoxShape.circle,
-                          boxShadow: _state == NetworkState.connected
-                              ? const [
-                                  BoxShadow(
-                                    color: Color(0x882ecc71),
-                                    blurRadius: 6,
-                                    spreadRadius: 1,
-                                  ),
-                                ]
-                              : null,
+                          boxShadow: [
+                            BoxShadow(
+                              color: _indicatorColor.withValues(alpha: 0.6),
+                              blurRadius: 8,
+                              spreadRadius: 2,
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      Text(
-                        _status,
-                        style: const TextStyle(
-                          color: Color(0xffa0a5ad),
-                          fontSize: 13,
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
-                const SizedBox(width: 6),
+                const Spacer(),
                 IconButton(
                   onPressed: _openSettings,
                   icon: const Icon(
@@ -575,6 +592,18 @@ class _SettingsPageState extends State<SettingsPage> {
                 style: FilledButton.styleFrom(
                   backgroundColor: const Color(0xff78e08f),
                   foregroundColor: const Color(0xff09100b),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+              ),
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                onPressed: () =>
+                    widget.network.connectManual('192.168.0.3', 8989),
+                icon: const Icon(Icons.wifi),
+                label: const Text('Connect to PC on Wi-Fi (192.168.0.3)'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xffb0b6bd),
+                  side: const BorderSide(color: Color(0xff303238)),
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
               ),
