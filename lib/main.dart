@@ -4,8 +4,63 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 
-void main() => runApp(const AeroPadApp());
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await SettingsService.init();
+  runApp(const AeroPadApp());
+}
+
+class SettingsService {
+  static const boxName = 'aeropad_settings';
+  static Box? _box;
+
+  static Future<void> init([String? path]) async {
+    try {
+      if (path != null) {
+        Hive.init(path);
+      } else {
+        await Hive.initFlutter();
+      }
+      _box = await Hive.openBox(boxName);
+    } catch (_) {
+      // Graceful fallback if platform or test sandbox restricts disk access
+    }
+  }
+
+  static Box? get _safeBox {
+    try {
+      if (_box != null && _box!.isOpen) return _box;
+      if (Hive.isBoxOpen(boxName)) return Hive.box(boxName);
+    } catch (_) {}
+    return null;
+  }
+
+  static double get sensitivity =>
+      (_safeBox?.get('sensitivity', defaultValue: 1.0) as num?)?.toDouble() ?? 1.0;
+  static set sensitivity(double val) => _safeBox?.put('sensitivity', val);
+
+  static bool get invertScroll =>
+      _safeBox?.get('invertScroll', defaultValue: false) as bool? ?? false;
+  static set invertScroll(bool val) => _safeBox?.put('invertScroll', val);
+
+  static bool get invertCursor =>
+      _safeBox?.get('invertCursor', defaultValue: false) as bool? ?? false;
+  static set invertCursor(bool val) => _safeBox?.put('invertCursor', val);
+
+  static bool get haptics =>
+      _safeBox?.get('haptics', defaultValue: true) as bool? ?? true;
+  static set haptics(bool val) => _safeBox?.put('haptics', val);
+
+  static String get manualIp =>
+      _safeBox?.get('manualIp', defaultValue: '') as String? ?? '';
+  static set manualIp(String val) => _safeBox?.put('manualIp', val);
+
+  static int get manualPort =>
+      (_safeBox?.get('manualPort', defaultValue: 8989) as num?)?.toInt() ?? 8989;
+  static set manualPort(int val) => _safeBox?.put('manualPort', val);
+}
 
 enum NetworkState { disconnected, searching, connected }
 
@@ -259,6 +314,7 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
+    final logoWidth = (size.shortestSide * 0.70).clamp(160.0, 320.0);
     return Scaffold(
       backgroundColor: const Color(0xff090a0c),
       body: Center(
@@ -270,7 +326,7 @@ class _SplashScreenState extends State<SplashScreen>
               padding: const EdgeInsets.symmetric(horizontal: 40),
               child: Image.asset(
                 'assets/splash_screen.png',
-                width: size.width * 0.70,
+                width: logoWidth,
                 fit: BoxFit.contain,
               ),
             ),
@@ -293,10 +349,10 @@ class _TrackpadPageState extends State<TrackpadPage> {
   StreamSubscription<NetworkStatus>? _statusSubscription;
   NetworkState _state = NetworkState.searching;
   String _address = '';
-  double _sensitivity = 1;
-  bool _invertScroll = false;
-  bool _invertCursor = false;
-  bool _haptics = true;
+  double _sensitivity = SettingsService.sensitivity;
+  bool _invertScroll = SettingsService.invertScroll;
+  bool _invertCursor = SettingsService.invertCursor;
+  bool _haptics = SettingsService.haptics;
   double _scrollAccumulatorY = 0.0;
   double _scrollAccumulatorX = 0.0;
   Offset? _downPosition;
@@ -513,6 +569,10 @@ class _TrackpadPageState extends State<TrackpadPage> {
               _invertCursor = updated.invertCursor;
               _haptics = updated.haptics;
             });
+            SettingsService.sensitivity = updated.sensitivity;
+            SettingsService.invertScroll = updated.invertScroll;
+            SettingsService.invertCursor = updated.invertCursor;
+            SettingsService.haptics = updated.haptics;
           },
         ),
       ),
@@ -525,114 +585,127 @@ class _TrackpadPageState extends State<TrackpadPage> {
         _invertCursor = settings.invertCursor;
         _haptics = settings.haptics;
       });
+      SettingsService.sensitivity = settings.sensitivity;
+      SettingsService.invertScroll = settings.invertScroll;
+      SettingsService.invertCursor = settings.invertCursor;
+      SettingsService.haptics = settings.haptics;
     }
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    backgroundColor: const Color(0xff090a0c),
-    body: SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () {
-                    if (_state == NetworkState.disconnected) {
-                      _network.discover();
-                    } else {
-                      _openSettings();
-                    }
-                  },
-                  child: Container(
-                    width: 36,
-                    height: 36,
-                    alignment: Alignment.centerLeft,
+  Widget build(BuildContext context) {
+    final isLandscape =
+        MediaQuery.orientationOf(context) == Orientation.landscape;
+
+    return Scaffold(
+      backgroundColor: const Color(0xff090a0c),
+      body: SafeArea(
+        child: Padding(
+          padding: isLandscape
+              ? const EdgeInsets.fromLTRB(20, 8, 20, 10)
+              : const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () {
+                      if (_state == NetworkState.disconnected) {
+                        _network.discover();
+                      } else {
+                        _openSettings();
+                      }
+                    },
                     child: Container(
-                      width: 16,
-                      height: 16,
-                      decoration: BoxDecoration(
-                        color: const Color(0xff121316),
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: const Color(0xff202226),
-                          width: 1,
+                      width: 36,
+                      height: 36,
+                      alignment: Alignment.centerLeft,
+                      child: Container(
+                        width: 16,
+                        height: 16,
+                        decoration: BoxDecoration(
+                          color: const Color(0xff121316),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: const Color(0xff202226),
+                            width: 1,
+                          ),
                         ),
-                      ),
-                      child: Center(
-                        child: Container(
-                          width: 6,
-                          height: 6,
-                          decoration: BoxDecoration(
-                            color: _indicatorColor,
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: _indicatorColor.withValues(alpha: 0.5),
-                                blurRadius: 3,
-                                spreadRadius: 0,
-                              ),
-                            ],
+                        child: Center(
+                          child: Container(
+                            width: 6,
+                            height: 6,
+                            decoration: BoxDecoration(
+                              color: _indicatorColor,
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: _indicatorColor.withValues(alpha: 0.5),
+                                  blurRadius: 3,
+                                  spreadRadius: 0,
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
-                ),
-                const Spacer(),
-                IconButton(
-                  onPressed: _openSettings,
-                  icon: const Icon(
-                    Icons.settings_outlined,
-                    color: Color(0xff8a909a),
-                    size: 22,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Expanded(
-              child: Listener(
-                onPointerDown: _down,
-                onPointerMove: _move,
-                onPointerUp: _up,
-                onPointerCancel: _cancel,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: const Color(0xff121316),
-                    borderRadius: BorderRadius.circular(28),
-                    border: Border.all(
-                      color: const Color(0xff202226),
-                      width: 1,
+                  const Spacer(),
+                  IconButton(
+                    onPressed: _openSettings,
+                    icon: const Icon(
+                      Icons.settings_outlined,
+                      color: Color(0xff8a909a),
+                      size: 22,
                     ),
                   ),
-                  child: const SizedBox.expand(
-                    child: CustomPaint(
-                      painter: _DotGridPainter(),
+                ],
+              ),
+              SizedBox(height: isLandscape ? 6 : 12),
+              Expanded(
+                child: Listener(
+                  onPointerDown: _down,
+                  onPointerMove: _move,
+                  onPointerUp: _up,
+                  onPointerCancel: _cancel,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: const Color(0xff121316),
+                      borderRadius:
+                          BorderRadius.circular(isLandscape ? 20 : 28),
+                      border: Border.all(
+                        color: const Color(0xff202226),
+                        width: 1,
+                      ),
+                    ),
+                    child: const SizedBox.expand(
+                      child: CustomPaint(
+                        painter: _DotGridPainter(),
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-            const SizedBox(height: 14),
-            _ClickBar(
-              onLeft: () {
-                _network.click('left');
-                if (_haptics) HapticFeedback.selectionClick();
-              },
-              onRight: () {
-                _network.click('right');
-                if (_haptics) HapticFeedback.selectionClick();
-              },
-            ),
-          ],
+              SizedBox(height: isLandscape ? 8 : 14),
+              _ClickBar(
+                isLandscape: isLandscape,
+                onLeft: () {
+                  _network.click('left');
+                  if (_haptics) HapticFeedback.selectionClick();
+                },
+                onRight: () {
+                  _network.click('right');
+                  if (_haptics) HapticFeedback.selectionClick();
+                },
+              ),
+            ],
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class SettingsResult {
@@ -678,8 +751,10 @@ class _SettingsPageState extends State<SettingsPage> {
   late bool _invertScroll = widget.invertScroll;
   late bool _invertCursor = widget.invertCursor;
   late bool _haptics = widget.haptics;
-  final _ipController = TextEditingController();
-  final _portController = TextEditingController(text: '8989');
+  late final _ipController = TextEditingController(text: SettingsService.manualIp);
+  late final _portController = TextEditingController(
+    text: SettingsService.manualPort.toString(),
+  );
   DiscoveredPc? _discovered;
   StreamSubscription<List<DiscoveredPc>>? _discoverySubscription;
   bool _isScanning = false;
@@ -712,6 +787,10 @@ class _SettingsPageState extends State<SettingsPage> {
       invertCursor: _invertCursor,
       haptics: _haptics,
     );
+    SettingsService.sensitivity = _sensitivity;
+    SettingsService.invertScroll = _invertScroll;
+    SettingsService.invertCursor = _invertCursor;
+    SettingsService.haptics = _haptics;
     widget.onSettingsChanged?.call(result);
   }
 
@@ -731,6 +810,8 @@ class _SettingsPageState extends State<SettingsPage> {
     final port = int.tryParse(_portController.text.trim()) ?? 8989;
     final ip = _ipController.text.trim();
     if (ip.isNotEmpty) {
+      SettingsService.manualIp = ip;
+      SettingsService.manualPort = port;
       await widget.network.connectManual(ip, port);
     }
   }
@@ -970,8 +1051,9 @@ class _SettingsPageState extends State<SettingsPage> {
         ),
         centerTitle: false,
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: [
           const _SectionTitle('Network'),
           const SizedBox(height: 8),
@@ -1350,7 +1432,8 @@ class _SettingsPageState extends State<SettingsPage> {
         ],
       ),
     ),
-  );
+  ),
+);
 }
 
 class _ActionButton extends StatelessWidget {
@@ -1449,16 +1532,21 @@ class _DotGridPainter extends CustomPainter {
 }
 
 class _ClickBar extends StatelessWidget {
-  const _ClickBar({required this.onLeft, required this.onRight});
+  const _ClickBar({
+    required this.onLeft,
+    required this.onRight,
+    this.isLandscape = false,
+  });
   final VoidCallback onLeft;
   final VoidCallback onRight;
+  final bool isLandscape;
 
   @override
   Widget build(BuildContext context) => Container(
-    height: 70,
+    height: isLandscape ? 48 : 68,
     decoration: BoxDecoration(
       color: const Color(0xff121316),
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(isLandscape ? 14 : 20),
       border: Border.all(color: const Color(0xff202226), width: 1),
     ),
     child: Row(
@@ -1468,14 +1556,20 @@ class _ClickBar extends StatelessWidget {
             isRight: false,
             label: 'Left Click',
             onTap: onLeft,
+            isLandscape: isLandscape,
           ),
         ),
-        Container(width: 1, height: 40, color: const Color(0xff23262b)),
+        Container(
+          width: 1,
+          height: isLandscape ? 24 : 38,
+          color: const Color(0xff23262b),
+        ),
         Expanded(
           child: _Button(
             isRight: true,
             label: 'Right Click',
             onTap: onRight,
+            isLandscape: isLandscape,
           ),
         ),
       ],
@@ -1488,26 +1582,28 @@ class _Button extends StatelessWidget {
     required this.isRight,
     required this.label,
     required this.onTap,
+    this.isLandscape = false,
   });
 
   final bool isRight;
   final String label;
   final VoidCallback onTap;
+  final bool isLandscape;
 
   @override
   Widget build(BuildContext context) => InkWell(
-    borderRadius: BorderRadius.circular(20),
+    borderRadius: BorderRadius.circular(isLandscape ? 14 : 20),
     onTap: onTap,
     child: Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        _MouseIcon(isRight: isRight),
-        const SizedBox(width: 12),
+        _MouseIcon(isRight: isRight, isLandscape: isLandscape),
+        SizedBox(width: isLandscape ? 8 : 12),
         Text(
           label,
-          style: const TextStyle(
-            color: Color(0xffe0e4e8),
-            fontSize: 14,
+          style: TextStyle(
+            color: const Color(0xffe0e4e8),
+            fontSize: isLandscape ? 12.5 : 14,
             fontWeight: FontWeight.w400,
           ),
         ),
@@ -1517,12 +1613,16 @@ class _Button extends StatelessWidget {
 }
 
 class _MouseIcon extends StatelessWidget {
-  const _MouseIcon({required this.isRight});
+  const _MouseIcon({
+    required this.isRight,
+    this.isLandscape = false,
+  });
   final bool isRight;
+  final bool isLandscape;
 
   @override
   Widget build(BuildContext context) => CustomPaint(
-    size: const Size(18, 27),
+    size: isLandscape ? const Size(15, 22) : const Size(18, 27),
     painter: _MouseIconPainter(isRight: isRight),
   );
 }

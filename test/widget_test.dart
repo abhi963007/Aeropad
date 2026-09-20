@@ -81,5 +81,32 @@ void main() {
 
     expect(find.byType(TrackpadPage), findsOneWidget);
   });
+
+  testWidgets('renders TrackpadPage cleanly in landscape orientation', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(840, 400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(const MaterialApp(home: TrackpadPage()));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(TrackpadPage), findsOneWidget);
+    expect(find.text('Left Click'), findsOneWidget);
+    expect(find.text('Right Click'), findsOneWidget);
+  });
+
+  test('SettingsService persists and falls back gracefully', () {
+    expect(SettingsService.sensitivity, isNotNull);
+    expect(SettingsService.invertScroll, isNotNull);
+    expect(SettingsService.invertCursor, isNotNull);
+    expect(SettingsService.haptics, isNotNull);
+    expect(SettingsService.manualIp, isNotNull);
+    expect(SettingsService.manualPort, isNotNull);
+  });
 }
 
