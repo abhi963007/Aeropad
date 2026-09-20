@@ -210,6 +210,7 @@ class _TrackpadPageState extends State<TrackpadPage> {
   double _sensitivity = 1;
   bool _invertScroll = false;
   bool _haptics = true;
+  double _scrollAccumulator = 0.0;
   Offset? _last;
   Offset? _downPosition;
   DateTime? _lastTapTime;
@@ -260,6 +261,10 @@ class _TrackpadPageState extends State<TrackpadPage> {
     _downPosition = event.position;
     _moved = false;
 
+    if (_fingerCount >= 2) {
+      _scrollAccumulator = 0.0;
+    }
+
     if (_fingerCount == 1 &&
         _lastTapTime != null &&
         _lastTapPosition != null &&
@@ -294,8 +299,13 @@ class _TrackpadPageState extends State<TrackpadPage> {
         _dragging = false;
       }
       _isPotentialDrag = false;
-      final direction = _invertScroll ? 1 : -1;
-      _network.scroll((direction * delta.dy * _sensitivity / 5).round());
+      final direction = _invertScroll ? 1.0 : -1.0;
+      _scrollAccumulator += direction * delta.dy * _sensitivity * 0.35;
+      if (_scrollAccumulator.abs() >= 1.0) {
+        final steps = _scrollAccumulator.truncate();
+        _network.scroll(steps);
+        _scrollAccumulator -= steps;
+      }
     } else {
       if (_isPotentialDrag && _moved && !_dragging) {
         _dragging = true;
@@ -350,6 +360,7 @@ class _TrackpadPageState extends State<TrackpadPage> {
     _dragging = false;
     _isPotentialDrag = false;
     _fingerCount = 0;
+    _scrollAccumulator = 0.0;
   }
 
   void _cancel(PointerCancelEvent event) {
@@ -362,6 +373,7 @@ class _TrackpadPageState extends State<TrackpadPage> {
     _last = null;
     _downPosition = null;
     _fingerCount = 0;
+    _scrollAccumulator = 0.0;
   }
 
   Future<void> _openSettings() async {
@@ -374,6 +386,13 @@ class _TrackpadPageState extends State<TrackpadPage> {
           haptics: _haptics,
           connected: _state == NetworkState.connected,
           connectedAddress: _address,
+          onSettingsChanged: (updated) {
+            setState(() {
+              _sensitivity = updated.sensitivity;
+              _invertScroll = updated.invertScroll;
+              _haptics = updated.haptics;
+            });
+          },
         ),
       ),
     );
@@ -513,6 +532,7 @@ class SettingsPage extends StatefulWidget {
     required this.haptics,
     required this.connected,
     required this.connectedAddress,
+    this.onSettingsChanged,
     super.key,
   });
   final NetworkMouseClient network;
@@ -521,6 +541,8 @@ class SettingsPage extends StatefulWidget {
   final bool haptics;
   final bool connected;
   final String connectedAddress;
+  final ValueChanged<SettingsResult>? onSettingsChanged;
+
   @override
   State<SettingsPage> createState() => _SettingsPageState();
 }
@@ -533,12 +555,18 @@ class _SettingsPageState extends State<SettingsPage> {
   final _portController = TextEditingController(text: '8989');
   DiscoveredPc? _discovered;
   StreamSubscription<List<DiscoveredPc>>? _discoverySubscription;
+  bool _isScanning = false;
 
   @override
   void initState() {
     super.initState();
     _discoverySubscription = widget.network.discoveries.listen((pcs) {
-      if (mounted && pcs.isNotEmpty) setState(() => _discovered = pcs.first);
+      if (mounted && pcs.isNotEmpty) {
+        setState(() {
+          _discovered = pcs.first;
+          _isScanning = false;
+        });
+      }
     });
   }
 
@@ -550,208 +578,544 @@ class _SettingsPageState extends State<SettingsPage> {
     super.dispose();
   }
 
-  void _close() => Navigator.of(context).pop(
-    SettingsResult(
+  void _notifyChange() {
+    final result = SettingsResult(
       sensitivity: _sensitivity,
       invertScroll: _invertScroll,
       haptics: _haptics,
-    ),
-  );
+    );
+    widget.onSettingsChanged?.call(result);
+  }
+
+  void _close() {
+    _notifyChange();
+    Navigator.of(context).pop(
+      SettingsResult(
+        sensitivity: _sensitivity,
+        invertScroll: _invertScroll,
+        haptics: _haptics,
+      ),
+    );
+  }
 
   Future<void> _manualConnect() async {
     final port = int.tryParse(_portController.text.trim()) ?? 8989;
     final ip = _ipController.text.trim();
-    if (ip.isNotEmpty) await widget.network.connectManual(ip, port);
+    if (ip.isNotEmpty) {
+      await widget.network.connectManual(ip, port);
+    }
+  }
+
+  Future<void> _triggerScan() async {
+    setState(() => _isScanning = true);
+    await widget.network.discover();
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) setState(() => _isScanning = false);
+    });
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      backgroundColor: const Color(0xff08090b),
-      title: const Text(
-        'Settings',
-        style: TextStyle(fontWeight: FontWeight.bold),
+  Widget build(BuildContext context) => PopScope(
+    canPop: true,
+    onPopInvokedWithResult: (didPop, result) {
+      _notifyChange();
+    },
+    child: Scaffold(
+      backgroundColor: const Color(0xff090a0c),
+      appBar: AppBar(
+        backgroundColor: const Color(0xff090a0c),
+        elevation: 0,
+        leading: IconButton(
+          onPressed: _close,
+          icon: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: Color(0xffe0e4e8),
+            size: 18,
+          ),
+        ),
+        title: const Text(
+          'Settings',
+          style: TextStyle(
+            color: Color(0xffe0e4e8),
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.3,
+          ),
+        ),
+        centerTitle: false,
       ),
-      leading: IconButton(
-        onPressed: _close,
-        icon: const Icon(Icons.arrow_back),
-      ),
-    ),
-    body: ListView(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
-      children: [
-        const _SectionTitle('Network'),
-        _SettingsCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              FilledButton.icon(
-                onPressed: widget.network.discover,
-                icon: const Icon(Icons.wifi_find),
-                label: const Text('Auto-Discover PC'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xff78e08f),
-                  foregroundColor: const Color(0xff09100b),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
-              ),
-              const SizedBox(height: 10),
-              OutlinedButton.icon(
-                onPressed: () =>
-                    widget.network.connectManual('192.168.0.3', 8989),
-                icon: const Icon(Icons.wifi),
-                label: const Text('Connect to PC on Wi-Fi (192.168.0.3)'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xffb0b6bd),
-                  side: const BorderSide(color: Color(0xff303238)),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
-              ),
-              const SizedBox(height: 10),
-              OutlinedButton.icon(
-                onPressed: () =>
-                    widget.network.connectManual('192.168.137.1', 8989),
-                icon: const Icon(Icons.router_outlined),
-                label: const Text('Connect via Laptop Hotspot (192.168.137.1)'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xffb0b6bd),
-                  side: const BorderSide(color: Color(0xff303238)),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
-              ),
-              if (_discovered != null) ...[
-                const SizedBox(height: 14),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const CircleAvatar(
-                    backgroundColor: Color(0xff202d24),
-                    child: Icon(Icons.computer, color: Color(0xff78e08f)),
-                  ),
-                  title: Row(
-                    children: [
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: const BoxDecoration(
-                          color: Color(0xff78e08f),
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(child: Text(_discovered!.name)),
-                      if (widget.connected &&
-                          widget.connectedAddress == _discovered!.address)
-                        const Text(
-                          'Connected',
-                          style: TextStyle(
-                            color: Color(0xff78e08f),
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+        children: [
+          const _SectionTitle('Network'),
+          const SizedBox(height: 8),
+          _SettingsCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (_discovered != null) ...[
+                  Builder(
+                    builder: (context) {
+                      final isCurrentPcConnected = widget.connected &&
+                          (widget.connectedAddress == _discovered!.address ||
+                              widget.connectedAddress == _discovered!.name);
+                      return Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xff0d0e12),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: isCurrentPcConnected
+                                ? const Color(0xff1b3323)
+                                : const Color(0xff1e2229),
                           ),
                         ),
-                    ],
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 38,
+                              height: 38,
+                              decoration: BoxDecoration(
+                                color: isCurrentPcConnected
+                                    ? const Color(0xff12281a)
+                                    : const Color(0xff181a20),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Icon(
+                                Icons.laptop_chromebook_rounded,
+                                color: isCurrentPcConnected
+                                    ? const Color(0xff2ecc71)
+                                    : const Color(0xffa8b0ba),
+                                size: 20,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _discovered!.name,
+                                    style: const TextStyle(
+                                      color: Color(0xffe0e4e8),
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '${_discovered!.address}:${_discovered!.port}',
+                                    style: const TextStyle(
+                                      color: Color(0xff6e7681),
+                                      fontSize: 11,
+                                      fontFamily: 'monospace',
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (isCurrentPcConnected) ...[
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xff12281a),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      width: 6,
+                                      height: 6,
+                                      decoration: const BoxDecoration(
+                                        color: Color(0xff2ecc71),
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 5),
+                                    const Text(
+                                      'Connected',
+                                      style: TextStyle(
+                                        color: Color(0xff2ecc71),
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              IconButton(
+                                onPressed: widget.network.disconnect,
+                                tooltip: 'Disconnect',
+                                icon: const Icon(
+                                  Icons.link_off_rounded,
+                                  color: Color(0xffef4444),
+                                  size: 18,
+                                ),
+                              ),
+                            ] else
+                              OutlinedButton(
+                                onPressed: () =>
+                                    widget.network.connect(_discovered!),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: const Color(0xffe0e4e8),
+                                  side: const BorderSide(
+                                    color: Color(0xff282c35),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 14,
+                                    vertical: 8,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                ),
+                                child: const Text(
+                                  'Connect',
+                                  style: TextStyle(fontSize: 12),
+                                ),
+                              ),
+                          ],
+                        ),
+                      );
+                    },
                   ),
-                  subtitle: Text(
-                    '${_discovered!.address}:${_discovered!.port}',
-                    style: const TextStyle(
-                      color: Color(0xff747980),
-                      fontSize: 11,
+                  const SizedBox(height: 12),
+                ],
+                Row(
+                  children: [
+                    Expanded(
+                      child: _ActionButton(
+                        icon: _isScanning
+                            ? Icons.hourglass_top_rounded
+                            : Icons.radar_rounded,
+                        label: _isScanning ? 'Scanning...' : 'Auto-Discover',
+                        onTap: _triggerScan,
+                      ),
                     ),
-                  ),
-                  trailing: TextButton(
-                    onPressed: () => widget.network.connect(_discovered!),
-                    child: const Text('Connect'),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _ActionButton(
+                        icon: Icons.wifi_rounded,
+                        label: 'Wi-Fi (192.168.0.3)',
+                        onTap: () => widget.network.connectManual(
+                          '192.168.0.3',
+                          8989,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                _ActionButton(
+                  icon: Icons.router_outlined,
+                  label: 'Hotspot Gateway (192.168.137.1)',
+                  onTap: () => widget.network.connectManual(
+                    '192.168.137.1',
+                    8989,
                   ),
                 ),
               ],
-              const SizedBox(height: 14),
-              TextField(
-                controller: _ipController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Manual IP address',
-                  hintText: '192.168.43.1',
-                  prefixIcon: Icon(Icons.lan_outlined),
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: _portController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Port',
-                  prefixIcon: Icon(Icons.numbers),
-                ),
-              ),
-              const SizedBox(height: 12),
-              OutlinedButton(
-                onPressed: _manualConnect,
-                child: const Text('Connect to IP'),
-              ),
-              if (widget.connected)
-                TextButton(
-                  onPressed: widget.network.disconnect,
-                  child: const Text(
-                    'Disconnect',
-                    style: TextStyle(color: Color(0xffff8a80)),
-                  ),
-                ),
-            ],
+            ),
           ),
-        ),
-        const SizedBox(height: 24),
-        const _SectionTitle('Tuning'),
-        _SettingsCard(
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  const Text('Cursor Sensitivity'),
-                  const Spacer(),
-                  Text(
-                    '${_sensitivity.toStringAsFixed(1)}x',
-                    style: const TextStyle(
-                      color: Color(0xff78e08f),
-                      fontWeight: FontWeight.bold,
+          const SizedBox(height: 20),
+          const _SectionTitle('Manual Connection'),
+          const SizedBox(height: 8),
+          _SettingsCard(
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 5,
+                      child: TextField(
+                        controller: _ipController,
+                        keyboardType: TextInputType.datetime,
+                        style: const TextStyle(
+                          color: Color(0xffe0e4e8),
+                          fontSize: 13,
+                          fontFamily: 'monospace',
+                        ),
+                        decoration: InputDecoration(
+                          hintText: '192.168.0.3',
+                          hintStyle: const TextStyle(
+                            color: Color(0xff4a505b),
+                          ),
+                          prefixIcon: const Icon(
+                            Icons.lan_outlined,
+                            size: 16,
+                            color: Color(0xff6e7681),
+                          ),
+                          filled: true,
+                          fillColor: const Color(0xff0b0c0f),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 12,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(
+                              color: Color(0xff202226),
+                            ),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(
+                              color: Color(0xff202226),
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(
+                              color: Color(0xff38bdf8),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      flex: 3,
+                      child: TextField(
+                        controller: _portController,
+                        keyboardType: TextInputType.number,
+                        style: const TextStyle(
+                          color: Color(0xffe0e4e8),
+                          fontSize: 13,
+                          fontFamily: 'monospace',
+                        ),
+                        decoration: InputDecoration(
+                          hintText: '8989',
+                          hintStyle: const TextStyle(
+                            color: Color(0xff4a505b),
+                          ),
+                          prefixIcon: const Icon(
+                            Icons.tag_rounded,
+                            size: 16,
+                            color: Color(0xff6e7681),
+                          ),
+                          filled: true,
+                          fillColor: const Color(0xff0b0c0f),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 12,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(
+                              color: Color(0xff202226),
+                            ),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(
+                              color: Color(0xff202226),
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(
+                              color: Color(0xff38bdf8),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _manualConnect,
+                    icon: const Icon(Icons.arrow_forward_rounded, size: 16),
+                    label: const Text(
+                      'Connect to IP',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xffe0e4e8),
+                      backgroundColor: const Color(0xff16181f),
+                      side: const BorderSide(color: Color(0xff252932)),
+                      padding: const EdgeInsets.symmetric(vertical: 13),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                   ),
-                ],
-              ),
-              Slider(
-                value: _sensitivity,
-                min: .5,
-                max: 3,
-                divisions: 10,
-                label: '${_sensitivity.toStringAsFixed(1)}x',
-                onChanged: (value) => setState(() => _sensitivity = value),
-              ),
-              const Divider(color: Color(0xff303238)),
-              SwitchListTile.adaptive(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Invert Scroll Direction'),
-                value: _invertScroll,
-                onChanged: (value) => setState(() => _invertScroll = value),
-              ),
-              SwitchListTile.adaptive(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Haptic Feedback'),
-                value: _haptics,
-                onChanged: (value) => setState(() => _haptics = value),
-              ),
-            ],
+                ),
+              ],
+            ),
           ),
-        ),
-        const SizedBox(height: 24),
-        OutlinedButton(
-          onPressed: _close,
-          style: OutlinedButton.styleFrom(
-            foregroundColor: const Color(0xff78e08f),
-            side: const BorderSide(color: Color(0xff303238)),
-            padding: const EdgeInsets.symmetric(vertical: 14),
+          const SizedBox(height: 20),
+          const _SectionTitle('Tuning'),
+          const SizedBox(height: 8),
+          _SettingsCard(
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    const Text(
+                      'Cursor Sensitivity',
+                      style: TextStyle(
+                        color: Color(0xffe0e4e8),
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                    const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xff181a20),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: const Color(0xff252932)),
+                      ),
+                      child: Text(
+                        '${_sensitivity.toStringAsFixed(1)}x',
+                        style: const TextStyle(
+                          color: Color(0xffa8b0ba),
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                          fontFamily: 'monospace',
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    activeTrackColor: const Color(0xff64748b),
+                    inactiveTrackColor: const Color(0xff1c1f26),
+                    thumbColor: const Color(0xffe2e8f0),
+                    overlayColor: Colors.transparent,
+                    trackHeight: 3,
+                  ),
+                  child: Slider(
+                    value: _sensitivity,
+                    min: .5,
+                    max: 3,
+                    divisions: 10,
+                    onChanged: (value) {
+                      setState(() => _sensitivity = value);
+                      _notifyChange();
+                    },
+                  ),
+                ),
+                const Divider(color: Color(0xff1c1f24), height: 16),
+                SwitchListTile.adaptive(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text(
+                    'Invert Scroll Direction',
+                    style: TextStyle(
+                      color: Color(0xffe0e4e8),
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+                  subtitle: const Text(
+                    'Natural 2-finger scroll (push content)',
+                    style: TextStyle(
+                      color: Color(0xff6e7681),
+                      fontSize: 11,
+                    ),
+                  ),
+                  activeThumbColor: const Color(0xffe2e8f0),
+                  activeTrackColor: const Color(0xff334155),
+                  value: _invertScroll,
+                  onChanged: (value) {
+                    setState(() => _invertScroll = value);
+                    _notifyChange();
+                  },
+                ),
+                const Divider(color: Color(0xff1c1f24), height: 16),
+                SwitchListTile.adaptive(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text(
+                    'Haptic Feedback',
+                    style: TextStyle(
+                      color: Color(0xffe0e4e8),
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+                  subtitle: const Text(
+                    'Tactile feedback on clicks & gestures',
+                    style: TextStyle(
+                      color: Color(0xff6e7681),
+                      fontSize: 11,
+                    ),
+                  ),
+                  activeThumbColor: const Color(0xffe2e8f0),
+                  activeTrackColor: const Color(0xff334155),
+                  value: _haptics,
+                  onChanged: (value) {
+                    setState(() => _haptics = value);
+                    _notifyChange();
+                  },
+                ),
+              ],
+            ),
           ),
-          child: const Text('Save Settings'),
-        ),
-      ],
+        ],
+      ),
+    ),
+  );
+}
+
+class _ActionButton extends StatelessWidget {
+  const _ActionButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => InkWell(
+    onTap: onTap,
+    borderRadius: BorderRadius.circular(12),
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xff16181f),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xff22252e)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 15, color: const Color(0xff94a3b8)),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: Color(0xffc5ccd4),
+                fontSize: 12,
+                fontWeight: FontWeight.w400,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
     ),
   );
 }
@@ -763,9 +1127,9 @@ class _SectionTitle extends StatelessWidget {
   Widget build(BuildContext context) => Text(
     text.toUpperCase(),
     style: const TextStyle(
-      color: Color(0xff78e08f),
-      fontSize: 12,
-      fontWeight: FontWeight.bold,
+      color: Color(0xff6e7681),
+      fontSize: 11,
+      fontWeight: FontWeight.w600,
       letterSpacing: 1.3,
     ),
   );
@@ -776,11 +1140,11 @@ class _SettingsCard extends StatelessWidget {
   final Widget child;
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(16),
+    padding: const EdgeInsets.all(14),
     decoration: BoxDecoration(
       color: const Color(0xff121316),
       borderRadius: BorderRadius.circular(18),
-      border: Border.all(color: const Color(0xff202226)),
+      border: Border.all(color: const Color(0xff202226), width: 1.0),
     ),
     child: child,
   );
