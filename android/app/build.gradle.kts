@@ -26,13 +26,6 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
-
-    packaging {
-        jniLibs {
-            // Debug builds keep Flutter's native symbols and avoid Windows file-lock failures during stripping.
-            keepDebugSymbols += "**/*.so"
-        }
-    }
 }
 
 kotlin {
