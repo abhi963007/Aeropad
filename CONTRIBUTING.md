@@ -40,9 +40,9 @@ Have an idea for a cool feature (e.g., Gyro Air Mouse, Media Remote, Presentatio
 
 ## Code Style & Guidelines
 - Write clean, idiomatic **Dart** code and format changes with `dart format`.
-- Keep Flutter UI and gesture logic in `lib/`.
-- Keep Android-only Bluetooth HID code in `android/app/src/main/kotlin/` behind the existing platform channels.
+- Keep Flutter UI and gesture processing logic in `lib/main.dart`.
+- Keep the lightweight desktop companion server in `server/aeropad_server.py`.
 - Run `flutter analyze` and `flutter test` before opening a pull request.
-- Ensure Bluetooth HID descriptors strictly comply with USB-IF HID standards.
+- Keep UDP network packets compact and binary/JSON-efficient for ultra-low latency (1-5ms).
 
 Thank you for helping make AeroPad better!

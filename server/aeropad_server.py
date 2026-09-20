@@ -146,13 +146,25 @@ class AeroPadServer:
         ]
         for thread in threads:
             thread.start()
+        import signal
+        def _signal_handler(sig: int, frame: Any) -> None:
+            self.running = False
+
+        signal.signal(signal.SIGINT, _signal_handler)
+        if hasattr(signal, "SIGTERM"):
+            signal.signal(signal.SIGTERM, _signal_handler)
+
         try:
-            while True:
-                time.sleep(1)
-        except KeyboardInterrupt:
+            while self.running:
+                time.sleep(0.5)
+        finally:
             self.running = False
             for button in list(self.pressed):
-                self.mouse.release(self._button(button))
+                try:
+                    self.mouse.release(self._button(button))
+                except Exception:
+                    pass
+            print("\n[AeroPad] Server stopped cleanly.")
 
 
 if __name__ == "__main__":

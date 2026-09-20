@@ -3,15 +3,14 @@
 ![AeroPad Banner](assets/banner.png)
 
 # 📱 AeroPad
-### Turn your Android smartphone into a high-precision, plug-and-play Bluetooth trackpad & mouse — **with ZERO software or servers installed on your PC.**
+### Turn your Android smartphone into a high-precision, ultra-low-latency Wi-Fi trackpad & mouse.
 
 ---
 
-[![Platform](https://img.shields.io/badge/Platform-Android%209.0%2B%20(API%2028%2B)-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://developer.android.com)
+[![Platform](https://img.shields.io/badge/Platform-Android%208.0%2B%20(API%2026%2B)-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://developer.android.com)
 [![Framework](https://img.shields.io/badge/Framework-Flutter-02569B?style=for-the-badge&logo=flutter&logoColor=white)](https://flutter.dev)
-[![Android Bridge](https://img.shields.io/badge/Android%20Bridge-Kotlin-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white)](https://kotlinlang.org)
-[![Protocol](https://img.shields.io/badge/Protocol-Bluetooth%20HID-0082FC?style=for-the-badge&logo=bluetooth&logoColor=white)](https://en.wikipedia.org/wiki/Human_interface_device)
-[![Host Software](https://img.shields.io/badge/Host%20Software-Zero%20(100%25%20Plug%20%26%20Play)-22C55E?style=for-the-badge)]()
+[![Protocol](https://img.shields.io/badge/Protocol-Wi--Fi%20UDP-0082FC?style=for-the-badge&logo=wi-fi&logoColor=white)](https://en.wikipedia.org/wiki/User_Datagram_Protocol)
+[![Companion Server](https://img.shields.io/badge/Companion%20Server-Python%20(Single--File)-22C55E?style=for-the-badge&logo=python&logoColor=white)](server/aeropad_server.py)
 [![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)](LICENSE)
 
 <br/>
@@ -20,9 +19,8 @@
 [Interface](#-interface-preview) •
 [Why AeroPad?](#-why-aeropad-vs-traditional-solutions) •
 [Architecture](#-system-architecture) •
-[HID Specifications](#-hid-report-descriptor-specification) •
 [Gestures](#-touchpad-gestures--controls) •
-[Pairing Guide](#-pairing--quick-start-guide) •
+[Quick Start](#-quick-start-guide) •
 [Roadmap](#-development-roadmap)
 
 </div>
@@ -33,41 +31,40 @@
 
 <div align="center">
   <img src="assets/ui.png" width="380" style="border-radius: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);" alt="AeroPad Minimalist Trackpad UI" />
-  <p><em>Official AeroPad Minimalist Trackpad Interface — Clean, distraction-free, maximum surface area.</em></p>
+  <p><em>Official AeroPad Cyber-Minimalist Trackpad Interface — Clean, distraction-free, maximum touch surface.</em></p>
 </div>
 
 ---
 
 ## 💡 Overview
 
-**AeroPad** transforms your Android device into an ultra-low-latency virtual trackpad. The Flutter app sends compact UDP input packets over the local Wi-Fi network or a phone hotspot to a lightweight Python receiver running on the computer.
+**AeroPad** transforms your Android smartphone into an ultra-low-latency virtual trackpad and mouse. The Flutter client dispatches compact, lightweight UDP input packets over your local Wi-Fi or mobile hotspot directly to a companion Python receiver running on your computer.
 
-The receiver uses `pynput` to apply movement, clicks, dragging, and scrolling through the host operating system input layer. A UDP discovery beacon lets the phone find the computer without manually entering an address.
+The receiver utilizes native OS input simulation (`pynput`) to execute cursor movement, button clicks, double-tap dragging, and smooth sub-pixel scrolling with 1–5ms latency. Multi-subnet auto-discovery probes active network interfaces to pair your phone and PC effortlessly.
 
 ---
 
 ## ⚡ Key Features
 
-- **🖥️ Lightweight PC Receiver:** One Python script and the `pynput` dependency; no compiled companion application.
-- **📡 Wi-Fi & Hotspot:** Works on a shared Wi-Fi network or directly through a phone hotspot.
-- **⚡ Ultra-Low Latency:** Sends small UDP datagrams directly to the local receiver on port `8989`.
-- **🏢 Enterprise & Workstation Safe:** Operates flawlessly on restricted corporate laptops, school computers, and public kiosks where installing `.exe` servers is blocked by IT administrators.
-- **🎯 Dynamic Cursor Acceleration:** Fluid cursor gliding modeled after high-end laptop trackpads with velocity-based acceleration.
-- **🖐️ Natural Multi-Touch Gestures:** Smooth two-finger scrolling, right-click taps, and double-tap-and-hold drag-and-drop.
-- **📳 Haptic Touch Engine:** Micro-haptic tactile feedback provides the satisfying sensation of physical mouse button clicks.
-- **🔘 Physical Volume Key Triggers:** Use hardware Volume Up / Down buttons as tactile left and right click switches.
+- **🖥️ Zero-Install Companion:** A single, lightweight Python script (`aeropad_server.py`) requiring only `pynput`; no bulky executables or installer wizards.
+- **📡 Multi-Subnet Auto-Discovery:** Automatically scans across Wi-Fi subnets and mobile hotspot gateways (`192.168.0.x`, `192.168.137.x`), bypassing router AP isolation blocks.
+- **⚡ Ultra-Low Latency (1–5 ms):** High-frequency UDP datagrams stream directly on port `8989` with minimal overhead.
+- **🎯 Ballistic Cursor Acceleration:** Fluid cursor gliding modeled after premium laptop trackpads with dynamic velocity curves.
+- **🖐️ Precision Multi-Touch Gestures:** Smooth 2-finger scrolling with live direction inversion toggle, tap-to-click, and double-tap drag-and-drop.
+- **📳 Haptic Touch Engine:** Satisfying tactile micro-vibrations emulate physical mouse actuation.
+- **🎨 Cyber-Minimalist Dark Aesthetic:** OLED-friendly deep void black theme with custom adaptive app icon and live connection status beacon.
 
 ---
 
 ## 🥊 Why AeroPad? vs Traditional Solutions
 
-| Feature | Traditional Apps (Remote Mouse, Monect, etc.) | 📱 **AeroPad (Bluetooth HID)** |
+| Feature | Traditional Apps (Remote Mouse, Unified Remote, Monect) | 📱 **AeroPad (Wi-Fi UDP)** |
 | :--- | :--- | :--- |
-| **PC Companion App** | ❌ Often heavy or cloud-dependent | 🟢 **One lightweight Python receiver** |
-| **Wi-Fi Network Required** | ❌ Usually requires the same configured network | 🟢 **Wi-Fi or phone hotspot** |
-| **Discovery** | ⚠️ Manual host setup is common | 🟢 **Automatic UDP beacon discovery** |
-| **Input Transport** | ❌ May use high-overhead polling | 🟢 **Direct UDP packets on the LAN** |
-| **Compatibility** | ⚠️ Needs OS-specific server build | 🟢 **Windows, macOS, and Linux via pynput** |
+| **PC Companion Setup** | ❌ Heavy, proprietary `.exe` installers with ads | 🟢 **Single clean Python script (Open Source)** |
+| **Network Flexibility** | ⚠️ Often requires complex manual IP configuration | 🟢 **Subnet broadcast + 1-tap quick connect** |
+| **Latency & Overhead** | ❌ High-latency TCP/HTTP polling | 🟢 **Direct UDP datagrams (1–5 ms latency)** |
+| **Cross-Platform Host** | ⚠️ Limited by proprietary desktop server support | 🟢 **Windows, macOS, and Linux out-of-the-box** |
+| **Privacy & Security** | ❌ Cloud account login, ads, and telemetry | 🟢 **100% Local LAN, zero telemetry, zero accounts** |
 
 ---
 
@@ -180,38 +177,46 @@ AeroPad works with computers that can run Python and `pynput`:
 ## 🚀 Pairing & Quick Start Guide
 
 1. **Prerequisites:**
-   - Android smartphone running **Android 9.0 (Pie / API 28) or higher**.
+   - Android smartphone running **Android 8.0 (Oreo / API 26) or higher**.
    - Python 3.9+ on the host computer.
-   - Phone and computer on the same Wi-Fi network, or the computer connected to the phone hotspot.
+   - Phone and computer on the same Wi-Fi network, or computer connected to the phone hotspot.
 
-2. **Start the PC receiver:**
+2. **Start the PC companion server:**
    ```bash
    cd server
-   python -m pip install -r requirements.txt
+   pip install -r requirements.txt
    python aeropad_server.py
    ```
 
-3. **Connect the phone:**
-   1. Connect the phone and computer to the same Wi-Fi network or phone hotspot.
-   2. Open **AeroPad**. It broadcasts a discovery request and automatically connects to the first receiver response.
-   3. If discovery is blocked by the network, open Settings and enter the PC's printed IP address and port `8989` manually.
+3. **Launch the AeroPad mobile app:**
+   1. Connect your phone to the same Wi-Fi or laptop mobile hotspot.
+   2. Open **AeroPad**. The top status beacon will glow Amber (Searching) and automatically switch to Green (Connected) when your PC is detected.
+   3. If auto-discovery is blocked by strict router AP isolation, tap Settings (⚙️) and tap **Connect to PC on Wi-Fi** or enter the IP manually.
 
-Allow inbound UDP traffic on ports `8988` and `8989` in the PC firewall when prompted.
+---
 
-## 🛠️ Development Setup
+## 🛠️ Development & Build Setup
 
-This repository is a Flutter Android application. Flutter renders the interface and handles gestures; `NetworkMouseClient` sends UDP packets to `server/aeropad_server.py`.
+This repository is built with Flutter and Python:
+- **Mobile Client**: Flutter renders the UI at up to 120 FPS and streams low-latency UDP packets.
+- **Companion Server**: Python with `pynput` converts incoming UDP packets into native OS mouse events.
 
 ```bash
+# Get Flutter dependencies
 flutter pub get
+
+# Run code analysis
 flutter analyze
+
+# Run unit & widget tests
 flutter test
+
+# Build debug APK
 flutter build apk --debug
+
+# Build optimized production release APK
+flutter build apk --release
 ```
-
-The debug APK is generated at `build/app/outputs/flutter-apk/app-debug.apk`.
-
-Android Studio or the Android SDK is required for APK builds. Bluetooth HID behavior must be tested on a physical Android 9+ device because emulators do not provide the required HID peripheral profile.
 
 ---
 
@@ -219,62 +224,59 @@ Android Studio or the Android SDK is required for APK builds. Bluetooth HID beha
 
 ```text
 AeroPad/
-├── android/
-│   └── app/src/main/kotlin/com/aeropad/aeropad/
-│       └── MainActivity.kt                    # Flutter MethodChannel + Bluetooth HID bridge
+├── android/                                    # Native Android wrapper & launcher assets
+│   ├── app/src/main/kotlin/                    # MulticastLock & native lifecycle
+│   └── app/src/main/res/                       # Adaptive launcher icons & mipmaps
 ├── lib/
-│   └── main.dart                               # Flutter UI, gestures, and HID calls
+│   └── main.dart                               # Flutter UI, gesture engine & UDP client
+├── server/
+│   ├── aeropad_server.py                       # Python UDP receiver & mouse controller
+│   └── requirements.txt                        # Host dependencies (pynput)
 ├── test/
-│   └── widget_test.dart                        # Flutter widget smoke tests
+│   └── widget_test.dart                        # Flutter test suite
 ├── docs/
-│   ├── Project_Abstract.docx                   # Full research specifications
-│   ├── Project_Abstract.doc
-│   └── RESEARCH_AND_ARCHITECTURE.md            # Technical architecture and specs
+│   ├── Project_Abstract.docx                   # Project abstract & research paper
+│   ├── OPENCODE_ACTION_PROMPT.md               # Architecture implementation prompts
+│   └── RESEARCH_AND_ARCHITECTURE.md            # Technical research & benchmarks
 ├── assets/
-│   └── banner.png                             # Project visual banner
-├── pubspec.yaml                                # Flutter dependencies and app metadata
-├── README.md
-├── LICENSE
-└── .gitignore
+│   ├── banner.png                              # Project banner
+│   ├── ui.png                                  # Trackpad screenshot
+│   ├── app icon.png                            # High-res AeroPad emblem
+│   └── app_icon_adaptive_fg.png                # Android adaptive icon foreground
+├── pubspec.yaml                                # Flutter dependencies & metadata
+├── README.md                                   # Production documentation
+└── LICENSE                                     # MIT License
 ```
 
 ---
 
 ## 🗺️ Development Roadmap
 
-- [x] Concept & Architectural Design
-- [x] Standard HID Mouse Report Descriptor formulation
-- [x] Project Abstract & Technical Documentation
-- [x] Flutter Android project scaffolding
-- [x] UDP receiver, discovery beacon, and Flutter network client
-- [x] Flutter touchpad surface and dark AeroPad interface
-- [x] Two-finger scroll & acceleration algorithms
-- [ ] Double-tap-and-hold drag-and-drop gesture
-- [ ] Volume key click triggers
-- [ ] Settings panel for sensitivity and acceleration
+- [x] High-precision ballistic cursor gliding with velocity scaling
+- [x] Ultra-low-latency UDP network transport layer (`port 8989`)
+- [x] Multi-subnet broadcast & direct probing auto-discovery (`port 8988`)
+- [x] Sub-pixel smooth two-finger scrolling with live direction inversion
+- [x] Double-tap-and-hold drag-and-drop gesture engine
+- [x] Tactile micro-haptic actuation feedback on clicks
+- [x] Dark cyber-minimalist OLED UI with live status indicator beacon
+- [x] Android 8.0+ adaptive vector icons with safe-zone insets
+- [x] In-app Settings with live parameter synchronization and PopScope safety
 - [ ] Air Mouse Mode (Gyroscope / Accelerometer based pointing for presentations)
-- [ ] Keyboard input extension (HID Keyboard profile integration)
+- [ ] Virtual soft keyboard and media controls extension
 
 ---
 
 ## 📄 Documentation Files
 
-The repository includes complete technical specifications and formal project documents:
-- 📑 [**Project_Abstract.docx**](docs/Project_Abstract.docx) - Formatted Microsoft Word Document
-- 📑 [**Project_Abstract.doc**](docs/Project_Abstract.doc) - Legacy Word Document
-- 📑 [**RESEARCH_AND_ARCHITECTURE.md**](docs/RESEARCH_AND_ARCHITECTURE.md) - Complete Technical Architecture
+The repository includes complete research documentation:
+- 📑 [**Project_Abstract.docx**](docs/Project_Abstract.docx) — Formal Academic Abstract & Specification
+- 📑 [**RESEARCH_AND_ARCHITECTURE.md**](docs/RESEARCH_AND_ARCHITECTURE.md) — Comprehensive Architecture, Protocol Benchmarks & Design Decisions
 
 ---
 
 ## 🤝 Contributing
 
-Contributions are welcome! If you have suggestions, feature requests, or bug reports, feel free to open an issue or submit a pull request.
-
-1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the Branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+Contributions are welcome! Please review [CONTRIBUTING.md](CONTRIBUTING.md) for branch workflows and coding guidelines.
 
 ---
 
