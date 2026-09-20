@@ -51,7 +51,9 @@ class AeroPadServer:
         if command == "move":
             self.mouse.move(int(packet.get("dx", 0)), int(packet.get("dy", 0)))
         elif command == "scroll":
-            self.mouse.scroll(0, int(packet.get("dy", 0)))
+            dx = int(packet.get("dx", 0))
+            dy = int(packet.get("dy", 0))
+            self.mouse.scroll(dx, dy)
         elif command == "click":
             self.mouse.click(self._button(str(packet.get("btn", "left"))))
         elif command == "down":

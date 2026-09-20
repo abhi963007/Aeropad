@@ -50,6 +50,24 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(AlertDialog), findsNothing);
+
+    // Scroll until 'Invert Scroll Direction' is visible
+    await tester.scrollUntilVisible(
+      find.text('Invert Scroll Direction'),
+      100,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Invert Scroll Direction'), findsOneWidget);
+
+    // Toggle Invert Scroll Direction
+    await tester.tap(find.text('Invert Scroll Direction'));
+    await tester.pumpAndSettle();
+
+    // Close settings via back button
+    await tester.tap(find.byIcon(Icons.arrow_back_ios_new_rounded));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(TrackpadPage), findsOneWidget);
   });
 }
 

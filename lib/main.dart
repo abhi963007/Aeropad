@@ -162,7 +162,8 @@ class NetworkMouseClient {
   }
 
   void move(int dx, int dy) => send({'type': 'move', 'dx': dx, 'dy': dy});
-  void scroll(int dy) => send({'type': 'scroll', 'dy': dy});
+  void scroll({int dx = 0, int dy = 0}) =>
+      send({'type': 'scroll', 'dx': dx, 'dy': dy});
   void click(String button) => send({'type': 'click', 'btn': button});
   void buttonDown(String button) => send({'type': 'down', 'btn': button});
   void buttonUp(String button) => send({'type': 'up', 'btn': button});
@@ -295,7 +296,8 @@ class _TrackpadPageState extends State<TrackpadPage> {
   double _sensitivity = 1;
   bool _invertScroll = false;
   bool _haptics = true;
-  double _scrollAccumulator = 0.0;
+  double _scrollAccumulatorY = 0.0;
+  double _scrollAccumulatorX = 0.0;
   Offset? _last;
   Offset? _downPosition;
   DateTime? _lastTapTime;
@@ -347,7 +349,8 @@ class _TrackpadPageState extends State<TrackpadPage> {
     _moved = false;
 
     if (_fingerCount >= 2) {
-      _scrollAccumulator = 0.0;
+      _scrollAccumulatorY = 0.0;
+      _scrollAccumulatorX = 0.0;
     }
 
     if (_fingerCount == 1 &&
@@ -384,12 +387,40 @@ class _TrackpadPageState extends State<TrackpadPage> {
         _dragging = false;
       }
       _isPotentialDrag = false;
-      final direction = _invertScroll ? 1.0 : -1.0;
-      _scrollAccumulator += direction * delta.dy * _sensitivity * 0.35;
-      if (_scrollAccumulator.abs() >= 1.0) {
-        final steps = _scrollAccumulator.truncate();
-        _network.scroll(steps);
-        _scrollAccumulator -= steps;
+
+      // Invert Scroll:
+      // Normal Mode (_invertScroll == false):
+      // - Move fingers UP (delta.dy < 0) -> scroll UP (dy > 0)
+      // - Move fingers DOWN (delta.dy > 0) -> scroll DOWN (dy < 0)
+      // - Move fingers LEFT (delta.dx < 0) -> scroll LEFT (dx < 0)
+      // - Move fingers RIGHT (delta.dx > 0) -> scroll RIGHT (dx > 0)
+      //
+      // Inverted Mode (_invertScroll == true):
+      // Exact opposite of every direction:
+      // - Move fingers UP -> scroll DOWN (dy < 0)
+      // - Move fingers DOWN -> scroll UP (dy > 0)
+      // - Move fingers LEFT -> scroll RIGHT (dx > 0)
+      // - Move fingers RIGHT -> scroll LEFT (dx < 0)
+      final yFactor = _invertScroll ? 1.0 : -1.0;
+      final xFactor = _invertScroll ? -1.0 : 1.0;
+
+      _scrollAccumulatorY += yFactor * delta.dy * _sensitivity * 0.35;
+      _scrollAccumulatorX += xFactor * delta.dx * _sensitivity * 0.35;
+
+      int stepsY = 0;
+      int stepsX = 0;
+
+      if (_scrollAccumulatorY.abs() >= 1.0) {
+        stepsY = _scrollAccumulatorY.truncate();
+        _scrollAccumulatorY -= stepsY;
+      }
+      if (_scrollAccumulatorX.abs() >= 1.0) {
+        stepsX = _scrollAccumulatorX.truncate();
+        _scrollAccumulatorX -= stepsX;
+      }
+
+      if (stepsX != 0 || stepsY != 0) {
+        _network.scroll(dx: stepsX, dy: stepsY);
       }
     } else {
       if (_isPotentialDrag && _moved && !_dragging) {
@@ -445,7 +476,8 @@ class _TrackpadPageState extends State<TrackpadPage> {
     _dragging = false;
     _isPotentialDrag = false;
     _fingerCount = 0;
-    _scrollAccumulator = 0.0;
+    _scrollAccumulatorY = 0.0;
+    _scrollAccumulatorX = 0.0;
   }
 
   void _cancel(PointerCancelEvent event) {
@@ -458,7 +490,8 @@ class _TrackpadPageState extends State<TrackpadPage> {
     _last = null;
     _downPosition = null;
     _fingerCount = 0;
-    _scrollAccumulator = 0.0;
+    _scrollAccumulatorY = 0.0;
+    _scrollAccumulatorX = 0.0;
   }
 
   Future<void> _openSettings() async {
@@ -1233,7 +1266,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
                   ),
                   subtitle: const Text(
-                    'Natural 2-finger scroll (push content)',
+                    'Reverse 2-finger vertical and horizontal scrolling',
                     style: TextStyle(
                       color: Color(0xff6e7681),
                       fontSize: 11,
