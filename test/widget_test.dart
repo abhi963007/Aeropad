@@ -63,6 +63,18 @@ void main() {
     await tester.tap(find.text('Invert Scroll Direction'));
     await tester.pumpAndSettle();
 
+    // Scroll until 'Invert Cursor Movement' is visible
+    await tester.scrollUntilVisible(
+      find.text('Invert Cursor Movement'),
+      100,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Invert Cursor Movement'), findsOneWidget);
+
+    // Toggle Invert Cursor Movement
+    await tester.tap(find.text('Invert Cursor Movement'));
+    await tester.pumpAndSettle();
+
     // Close settings via back button
     await tester.tap(find.byIcon(Icons.arrow_back_ios_new_rounded));
     await tester.pumpAndSettle();

@@ -295,6 +295,7 @@ class _TrackpadPageState extends State<TrackpadPage> {
   String _address = '';
   double _sensitivity = 1;
   bool _invertScroll = false;
+  bool _invertCursor = false;
   bool _haptics = true;
   double _scrollAccumulatorY = 0.0;
   double _scrollAccumulatorX = 0.0;
@@ -426,7 +427,11 @@ class _TrackpadPageState extends State<TrackpadPage> {
         _network.buttonDown('left');
         if (_haptics) HapticFeedback.selectionClick();
       }
-      _network.move(_accelerate(delta.dx), _accelerate(delta.dy));
+      final factor = _invertCursor ? -1.0 : 1.0;
+      _network.move(
+        _accelerate(delta.dx * factor),
+        _accelerate(delta.dy * factor),
+      );
     }
   }
 
@@ -497,6 +502,7 @@ class _TrackpadPageState extends State<TrackpadPage> {
           network: _network,
           sensitivity: _sensitivity,
           invertScroll: _invertScroll,
+          invertCursor: _invertCursor,
           haptics: _haptics,
           connected: _state == NetworkState.connected,
           connectedAddress: _address,
@@ -504,6 +510,7 @@ class _TrackpadPageState extends State<TrackpadPage> {
             setState(() {
               _sensitivity = updated.sensitivity;
               _invertScroll = updated.invertScroll;
+              _invertCursor = updated.invertCursor;
               _haptics = updated.haptics;
             });
           },
@@ -515,6 +522,7 @@ class _TrackpadPageState extends State<TrackpadPage> {
       setState(() {
         _sensitivity = settings.sensitivity;
         _invertScroll = settings.invertScroll;
+        _invertCursor = settings.invertCursor;
         _haptics = settings.haptics;
       });
     }
@@ -631,10 +639,12 @@ class SettingsResult {
   const SettingsResult({
     required this.sensitivity,
     required this.invertScroll,
+    this.invertCursor = false,
     required this.haptics,
   });
   final double sensitivity;
   final bool invertScroll;
+  final bool invertCursor;
   final bool haptics;
 }
 
@@ -643,6 +653,7 @@ class SettingsPage extends StatefulWidget {
     required this.network,
     required this.sensitivity,
     required this.invertScroll,
+    this.invertCursor = false,
     required this.haptics,
     required this.connected,
     required this.connectedAddress,
@@ -652,6 +663,7 @@ class SettingsPage extends StatefulWidget {
   final NetworkMouseClient network;
   final double sensitivity;
   final bool invertScroll;
+  final bool invertCursor;
   final bool haptics;
   final bool connected;
   final String connectedAddress;
@@ -664,6 +676,7 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   late double _sensitivity = widget.sensitivity;
   late bool _invertScroll = widget.invertScroll;
+  late bool _invertCursor = widget.invertCursor;
   late bool _haptics = widget.haptics;
   final _ipController = TextEditingController();
   final _portController = TextEditingController(text: '8989');
@@ -696,6 +709,7 @@ class _SettingsPageState extends State<SettingsPage> {
     final result = SettingsResult(
       sensitivity: _sensitivity,
       invertScroll: _invertScroll,
+      invertCursor: _invertCursor,
       haptics: _haptics,
     );
     widget.onSettingsChanged?.call(result);
@@ -707,6 +721,7 @@ class _SettingsPageState extends State<SettingsPage> {
       SettingsResult(
         sensitivity: _sensitivity,
         invertScroll: _invertScroll,
+        invertCursor: _invertCursor,
         haptics: _haptics,
       ),
     );
@@ -1276,6 +1291,32 @@ class _SettingsPageState extends State<SettingsPage> {
                   value: _invertScroll,
                   onChanged: (value) {
                     setState(() => _invertScroll = value);
+                    _notifyChange();
+                  },
+                ),
+                const Divider(color: Color(0xff1c1f24), height: 16),
+                SwitchListTile.adaptive(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text(
+                    'Invert Cursor Movement',
+                    style: TextStyle(
+                      color: Color(0xffe0e4e8),
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+                  subtitle: const Text(
+                    'Reverse 1-finger pointer direction (Opposite X & Y)',
+                    style: TextStyle(
+                      color: Color(0xff6e7681),
+                      fontSize: 11,
+                    ),
+                  ),
+                  activeThumbColor: const Color(0xffe2e8f0),
+                  activeTrackColor: const Color(0xff334155),
+                  value: _invertCursor,
+                  onChanged: (value) {
+                    setState(() => _invertCursor = value);
                     _notifyChange();
                   },
                 ),
