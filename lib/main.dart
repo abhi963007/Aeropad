@@ -689,6 +689,204 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
+  Future<void> _showManualConnectionDialog() async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: const Color(0xff121316),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: const BorderSide(color: Color(0xff202226)),
+          ),
+          titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+          contentPadding: const EdgeInsets.fromLTRB(20, 10, 20, 16),
+          actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          title: Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: const Color(0xff181a20),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.lan_outlined,
+                  color: Color(0xff38bdf8),
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: 10),
+              const Text(
+                'Manual Connection',
+                style: TextStyle(
+                  color: Color(0xffe0e4e8),
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'Enter the IPv4 address and port of your AeroPad companion server.',
+                  style: TextStyle(
+                    color: Color(0xff8a909a),
+                    fontSize: 12,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 5,
+                      child: TextField(
+                        controller: _ipController,
+                        keyboardType: TextInputType.datetime,
+                        autofocus: true,
+                        style: const TextStyle(
+                          color: Color(0xffe0e4e8),
+                          fontSize: 13,
+                          fontFamily: 'monospace',
+                        ),
+                        decoration: InputDecoration(
+                          hintText: '192.168.0.3',
+                          hintStyle: const TextStyle(
+                            color: Color(0xff4a505b),
+                          ),
+                          prefixIcon: const Icon(
+                            Icons.lan_outlined,
+                            size: 16,
+                            color: Color(0xff6e7681),
+                          ),
+                          filled: true,
+                          fillColor: const Color(0xff0b0c0f),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 12,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(
+                              color: Color(0xff202226),
+                            ),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(
+                              color: Color(0xff202226),
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(
+                              color: Color(0xff38bdf8),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      flex: 3,
+                      child: TextField(
+                        controller: _portController,
+                        keyboardType: TextInputType.number,
+                        style: const TextStyle(
+                          color: Color(0xffe0e4e8),
+                          fontSize: 13,
+                          fontFamily: 'monospace',
+                        ),
+                        decoration: InputDecoration(
+                          hintText: '8989',
+                          hintStyle: const TextStyle(
+                            color: Color(0xff4a505b),
+                          ),
+                          prefixIcon: const Icon(
+                            Icons.tag_rounded,
+                            size: 16,
+                            color: Color(0xff6e7681),
+                          ),
+                          filled: true,
+                          fillColor: const Color(0xff0b0c0f),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 12,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(
+                              color: Color(0xff202226),
+                            ),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(
+                              color: Color(0xff202226),
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(
+                              color: Color(0xff38bdf8),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text(
+                'Cancel',
+                style: TextStyle(
+                  color: Color(0xff8a909a),
+                  fontSize: 13,
+                ),
+              ),
+            ),
+            OutlinedButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                _manualConnect();
+              },
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xff38bdf8),
+                backgroundColor: const Color(0xff16181f),
+                side: const BorderSide(color: Color(0xff252932)),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 10,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              child: const Text(
+                'Connect',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Future<void> _triggerScan() async {
     setState(() => _isScanning = true);
     await widget.network.discover();
@@ -911,132 +1109,58 @@ class _SettingsPageState extends State<SettingsPage> {
           const _SectionTitle('Manual Connection'),
           const SizedBox(height: 8),
           _SettingsCard(
-            child: Column(
-              children: [
-                Row(
+            child: InkWell(
+              onTap: _showManualConnectionDialog,
+              borderRadius: BorderRadius.circular(12),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+                child: Row(
                   children: [
-                    Expanded(
-                      flex: 5,
-                      child: TextField(
-                        controller: _ipController,
-                        keyboardType: TextInputType.datetime,
-                        style: const TextStyle(
-                          color: Color(0xffe0e4e8),
-                          fontSize: 13,
-                          fontFamily: 'monospace',
-                        ),
-                        decoration: InputDecoration(
-                          hintText: '192.168.0.3',
-                          hintStyle: const TextStyle(
-                            color: Color(0xff4a505b),
-                          ),
-                          prefixIcon: const Icon(
-                            Icons.lan_outlined,
-                            size: 16,
-                            color: Color(0xff6e7681),
-                          ),
-                          filled: true,
-                          fillColor: const Color(0xff0b0c0f),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 12,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(
-                              color: Color(0xff202226),
-                            ),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(
-                              color: Color(0xff202226),
-                            ),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(
-                              color: Color(0xff38bdf8),
-                            ),
-                          ),
-                        ),
+                    Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: const Color(0xff181a20),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(
+                        Icons.lan_outlined,
+                        color: Color(0xff38bdf8),
+                        size: 18,
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      flex: 3,
-                      child: TextField(
-                        controller: _portController,
-                        keyboardType: TextInputType.number,
-                        style: const TextStyle(
-                          color: Color(0xffe0e4e8),
-                          fontSize: 13,
-                          fontFamily: 'monospace',
-                        ),
-                        decoration: InputDecoration(
-                          hintText: '8989',
-                          hintStyle: const TextStyle(
-                            color: Color(0xff4a505b),
-                          ),
-                          prefixIcon: const Icon(
-                            Icons.tag_rounded,
-                            size: 16,
-                            color: Color(0xff6e7681),
-                          ),
-                          filled: true,
-                          fillColor: const Color(0xff0b0c0f),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 12,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(
-                              color: Color(0xff202226),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Connect to IP',
+                            style: TextStyle(
+                              color: Color(0xffe0e4e8),
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w500,
                             ),
                           ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(
-                              color: Color(0xff202226),
+                          SizedBox(height: 2),
+                          Text(
+                            'Tap to enter custom server IP & port',
+                            style: TextStyle(
+                              color: Color(0xff6e7681),
+                              fontSize: 11,
                             ),
                           ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(
-                              color: Color(0xff38bdf8),
-                            ),
-                          ),
-                        ),
+                        ],
                       ),
+                    ),
+                    const Icon(
+                      Icons.arrow_forward_ios_rounded,
+                      color: Color(0xff6e7681),
+                      size: 14,
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: _manualConnect,
-                    icon: const Icon(Icons.arrow_forward_rounded, size: 16),
-                    label: const Text(
-                      'Connect to IP',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w400,
-                      ),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xffe0e4e8),
-                      backgroundColor: const Color(0xff16181f),
-                      side: const BorderSide(color: Color(0xff252932)),
-                      padding: const EdgeInsets.symmetric(vertical: 13),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
           const SizedBox(height: 20),
@@ -1222,14 +1346,17 @@ class _SettingsCard extends StatelessWidget {
   const _SettingsCard({required this.child});
   final Widget child;
   @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(14),
-    decoration: BoxDecoration(
-      color: const Color(0xff121316),
+  Widget build(BuildContext context) => Material(
+    color: const Color(0xff121316),
+    shape: RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(18),
-      border: Border.all(color: const Color(0xff202226), width: 1.0),
+      side: const BorderSide(color: Color(0xff202226), width: 1.0),
     ),
-    child: child,
+    clipBehavior: Clip.antiAlias,
+    child: Padding(
+      padding: const EdgeInsets.all(14),
+      child: child,
+    ),
   );
 }
 
