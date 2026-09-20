@@ -7,10 +7,11 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(const AeroPadApp());
-    expect(find.text('INITIALIZING AEROPAD ENGINE'), findsOneWidget);
+    expect(find.byType(SplashScreen), findsOneWidget);
+    expect(find.byType(Image), findsOneWidget);
 
-    // Fast-forward past the splash timer and transition
-    await tester.pump(const Duration(milliseconds: 2400));
+    // Fast-forward past the splash timer (1800ms) and fade transition (350ms)
+    await tester.pump(const Duration(milliseconds: 2200));
     await tester.pumpAndSettle();
 
     expect(

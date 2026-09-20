@@ -214,7 +214,7 @@ class _SplashScreenState extends State<SplashScreen>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 900),
+      duration: const Duration(milliseconds: 800),
     );
 
     _fadeAnimation = CurvedAnimation(
@@ -222,7 +222,7 @@ class _SplashScreenState extends State<SplashScreen>
       curve: Curves.easeOut,
     );
 
-    _scaleAnimation = Tween<double>(begin: 0.93, end: 1.0).animate(
+    _scaleAnimation = Tween<double>(begin: 0.92, end: 1.0).animate(
       CurvedAnimation(
         parent: _controller,
         curve: Curves.easeOutCubic,
@@ -231,7 +231,7 @@ class _SplashScreenState extends State<SplashScreen>
 
     _controller.forward();
 
-    _timer = Timer(const Duration(milliseconds: 2200), _navigateToTrackpad);
+    _timer = Timer(const Duration(milliseconds: 1800), _navigateToTrackpad);
   }
 
   void _navigateToTrackpad() {
@@ -243,7 +243,7 @@ class _SplashScreenState extends State<SplashScreen>
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           return FadeTransition(opacity: animation, child: child);
         },
-        transitionDuration: const Duration(milliseconds: 400),
+        transitionDuration: const Duration(milliseconds: 350),
       ),
     );
   }
@@ -260,143 +260,22 @@ class _SplashScreenState extends State<SplashScreen>
     final size = MediaQuery.sizeOf(context);
     return Scaffold(
       backgroundColor: const Color(0xff090a0c),
-      body: SafeArea(
-        child: SizedBox(
-          width: double.infinity,
-          height: double.infinity,
-          child: Column(
-            children: [
-              const Spacer(flex: 3),
-              FadeTransition(
-                opacity: _fadeAnimation,
-                child: ScaleTransition(
-                  scale: _scaleAnimation,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 32),
-                    child: Image.asset(
-                      'assets/splash_screen.png',
-                      width: size.width * 0.72,
-                      fit: BoxFit.contain,
-                    ),
-                  ),
-                ),
+      body: Center(
+        child: FadeTransition(
+          opacity: _fadeAnimation,
+          child: ScaleTransition(
+            scale: _scaleAnimation,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 40),
+              child: Image.asset(
+                'assets/splash_screen.png',
+                width: size.width * 0.70,
+                fit: BoxFit.contain,
               ),
-              const Spacer(flex: 2),
-              FadeTransition(
-                opacity: _fadeAnimation,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 130,
-                      height: 3,
-                      decoration: BoxDecoration(
-                        color: const Color(0xff161922),
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                      child: const _CyberLoadingBar(),
-                    ),
-                    const SizedBox(height: 14),
-                    const Text(
-                      'INITIALIZING AEROPAD ENGINE',
-                      style: TextStyle(
-                        color: Color(0xff6e7681),
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 2.0,
-                        fontFamily: 'monospace',
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const Spacer(flex: 1),
-              FadeTransition(
-                opacity: _fadeAnimation,
-                child: const Text(
-                  'v1.0.0 • Wi-Fi Precision Engine',
-                  style: TextStyle(
-                    color: Color(0xff3d4450),
-                    fontSize: 11,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-            ],
+            ),
           ),
         ),
       ),
-    );
-  }
-}
-
-class _CyberLoadingBar extends StatefulWidget {
-  const _CyberLoadingBar();
-
-  @override
-  State<_CyberLoadingBar> createState() => _CyberLoadingBarState();
-}
-
-class _CyberLoadingBarState extends State<_CyberLoadingBar>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _pulseController;
-
-  @override
-  void initState() {
-    super.initState();
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1400),
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _pulseController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _pulseController,
-      builder: (context, child) {
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(2),
-          child: Stack(
-            children: [
-              Align(
-                alignment: Alignment(
-                  -2.0 + (_pulseController.value * 4.0),
-                  0.0,
-                ),
-                child: Container(
-                  width: 50,
-                  height: 3,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [
-                        Colors.transparent,
-                        Color(0xff38bdf8),
-                        Colors.transparent,
-                      ],
-                    ),
-                    borderRadius: BorderRadius.circular(2),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x9938bdf8),
-                        blurRadius: 6,
-                        spreadRadius: 1,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
     );
   }
 }
