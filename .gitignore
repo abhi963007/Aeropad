@@ -68,3 +68,7 @@ Thumbs.db
 __pycache__/
 *.py[cod]
 *$py.class
+
+# PyInstaller intermediate build caches
+desktop_exe/build/
+
