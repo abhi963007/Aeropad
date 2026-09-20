@@ -742,37 +742,20 @@ class _SettingsPageState extends State<SettingsPage> {
         return AlertDialog(
           backgroundColor: const Color(0xff121316),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(22),
             side: const BorderSide(color: Color(0xff202226)),
           ),
-          titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
-          contentPadding: const EdgeInsets.fromLTRB(20, 10, 20, 16),
-          actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          title: Row(
-            children: [
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: const Color(0xff181a20),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(
-                  Icons.lan_outlined,
-                  color: Color(0xff38bdf8),
-                  size: 18,
-                ),
-              ),
-              const SizedBox(width: 10),
-              const Text(
-                'Manual Connection',
-                style: TextStyle(
-                  color: Color(0xffe0e4e8),
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
+          titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
+          contentPadding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+          title: const Text(
+            'Manual Connection',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Color(0xffe0e4e8),
+              fontSize: 17,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.3,
+            ),
           ),
           content: SingleChildScrollView(
             child: Column(
@@ -781,107 +764,159 @@ class _SettingsPageState extends State<SettingsPage> {
               children: [
                 const Text(
                   'Enter the IPv4 address and port of your AeroPad companion server.',
+                  textAlign: TextAlign.center,
                   style: TextStyle(
                     color: Color(0xff8a909a),
                     fontSize: 12,
-                    height: 1.4,
+                    height: 1.45,
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
+                TextField(
+                  controller: _ipController,
+                  keyboardType: TextInputType.datetime,
+                  autofocus: true,
+                  style: const TextStyle(
+                    color: Color(0xffe0e4e8),
+                    fontSize: 13.5,
+                    fontFamily: 'monospace',
+                  ),
+                  decoration: InputDecoration(
+                    labelText: 'IP Address',
+                    labelStyle: const TextStyle(
+                      color: Color(0xff6e7681),
+                      fontSize: 13,
+                    ),
+                    hintText: '192.168.0.3',
+                    hintStyle: const TextStyle(
+                      color: Color(0xff4a505b),
+                    ),
+                    prefixIcon: const Icon(
+                      Icons.lan_outlined,
+                      size: 17,
+                      color: Color(0xff6e7681),
+                    ),
+                    filled: true,
+                    fillColor: const Color(0xff0b0c0f),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 13,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(
+                        color: Color(0xff202226),
+                      ),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(
+                        color: Color(0xff202226),
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(
+                        color: Color(0xff38bdf8),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _portController,
+                  keyboardType: TextInputType.number,
+                  style: const TextStyle(
+                    color: Color(0xffe0e4e8),
+                    fontSize: 13.5,
+                    fontFamily: 'monospace',
+                  ),
+                  decoration: InputDecoration(
+                    labelText: 'Port',
+                    labelStyle: const TextStyle(
+                      color: Color(0xff6e7681),
+                      fontSize: 13,
+                    ),
+                    hintText: '8989',
+                    hintStyle: const TextStyle(
+                      color: Color(0xff4a505b),
+                    ),
+                    prefixIcon: const Icon(
+                      Icons.tag_rounded,
+                      size: 17,
+                      color: Color(0xff6e7681),
+                    ),
+                    filled: true,
+                    fillColor: const Color(0xff0b0c0f),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 13,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(
+                        color: Color(0xff202226),
+                      ),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(
+                        color: Color(0xff202226),
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(
+                        color: Color(0xff38bdf8),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 22),
                 Row(
                   children: [
                     Expanded(
-                      flex: 5,
-                      child: TextField(
-                        controller: _ipController,
-                        keyboardType: TextInputType.datetime,
-                        autofocus: true,
-                        style: const TextStyle(
-                          color: Color(0xffe0e4e8),
-                          fontSize: 13,
-                          fontFamily: 'monospace',
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.of(dialogContext).pop(),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xff94a3b8),
+                          backgroundColor: const Color(0xff16181f),
+                          side: const BorderSide(color: Color(0xff22252e)),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
-                        decoration: InputDecoration(
-                          hintText: '192.168.0.3',
-                          hintStyle: const TextStyle(
-                            color: Color(0xff4a505b),
-                          ),
-                          prefixIcon: const Icon(
-                            Icons.lan_outlined,
-                            size: 16,
-                            color: Color(0xff6e7681),
-                          ),
-                          filled: true,
-                          fillColor: const Color(0xff0b0c0f),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 12,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(
-                              color: Color(0xff202226),
-                            ),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(
-                              color: Color(0xff202226),
-                            ),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(
-                              color: Color(0xff38bdf8),
-                            ),
+                        child: const Text(
+                          'Cancel',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 10),
                     Expanded(
-                      flex: 3,
-                      child: TextField(
-                        controller: _portController,
-                        keyboardType: TextInputType.number,
-                        style: const TextStyle(
-                          color: Color(0xffe0e4e8),
-                          fontSize: 13,
-                          fontFamily: 'monospace',
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Navigator.of(dialogContext).pop();
+                          _manualConnect();
+                        },
+                        style: ElevatedButton.styleFrom(
+                          foregroundColor: const Color(0xff090a0c),
+                          backgroundColor: const Color(0xff38bdf8),
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
-                        decoration: InputDecoration(
-                          hintText: '8989',
-                          hintStyle: const TextStyle(
-                            color: Color(0xff4a505b),
-                          ),
-                          prefixIcon: const Icon(
-                            Icons.tag_rounded,
-                            size: 16,
-                            color: Color(0xff6e7681),
-                          ),
-                          filled: true,
-                          fillColor: const Color(0xff0b0c0f),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 12,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(
-                              color: Color(0xff202226),
-                            ),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(
-                              color: Color(0xff202226),
-                            ),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(
-                              color: Color(0xff38bdf8),
-                            ),
+                        child: const Text(
+                          'Connect',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ),
@@ -891,43 +926,6 @@ class _SettingsPageState extends State<SettingsPage> {
               ],
             ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text(
-                'Cancel',
-                style: TextStyle(
-                  color: Color(0xff8a909a),
-                  fontSize: 13,
-                ),
-              ),
-            ),
-            OutlinedButton(
-              onPressed: () {
-                Navigator.of(dialogContext).pop();
-                _manualConnect();
-              },
-              style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xff38bdf8),
-                backgroundColor: const Color(0xff16181f),
-                side: const BorderSide(color: Color(0xff252932)),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 10,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-              child: const Text(
-                'Connect',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          ],
         );
       },
     );
