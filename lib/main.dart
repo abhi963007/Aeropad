@@ -298,7 +298,6 @@ class _TrackpadPageState extends State<TrackpadPage> {
   bool _haptics = true;
   double _scrollAccumulatorY = 0.0;
   double _scrollAccumulatorX = 0.0;
-  Offset? _last;
   Offset? _downPosition;
   DateTime? _lastTapTime;
   Offset? _lastTapPosition;
@@ -344,7 +343,6 @@ class _TrackpadPageState extends State<TrackpadPage> {
   void _down(PointerDownEvent event) {
     _pointers[event.pointer] = event.position;
     _fingerCount = _pointers.length;
-    _last = event.position;
     _downPosition = event.position;
     _moved = false;
 
@@ -367,8 +365,8 @@ class _TrackpadPageState extends State<TrackpadPage> {
   }
 
   void _move(PointerMoveEvent event) {
-    final previous = _last;
-    _last = event.position;
+    final previous = _pointers[event.pointer];
+    _pointers[event.pointer] = event.position;
     if (previous == null) return;
     final delta = event.position - previous;
     if (delta.distance < .1) return;
@@ -404,8 +402,8 @@ class _TrackpadPageState extends State<TrackpadPage> {
       final yFactor = _invertScroll ? 1.0 : -1.0;
       final xFactor = _invertScroll ? -1.0 : 1.0;
 
-      _scrollAccumulatorY += yFactor * delta.dy * _sensitivity * 0.35;
-      _scrollAccumulatorX += xFactor * delta.dx * _sensitivity * 0.35;
+      _scrollAccumulatorY += yFactor * delta.dy * _sensitivity * 0.25;
+      _scrollAccumulatorX += xFactor * delta.dx * _sensitivity * 0.25;
 
       int stepsY = 0;
       int stepsX = 0;
@@ -470,7 +468,6 @@ class _TrackpadPageState extends State<TrackpadPage> {
       _lastTapPosition = null;
     }
 
-    _last = null;
     _downPosition = null;
     _moved = false;
     _dragging = false;
@@ -487,7 +484,6 @@ class _TrackpadPageState extends State<TrackpadPage> {
       _dragging = false;
     }
     _isPotentialDrag = false;
-    _last = null;
     _downPosition = null;
     _fingerCount = 0;
     _scrollAccumulatorY = 0.0;
@@ -514,12 +510,14 @@ class _TrackpadPageState extends State<TrackpadPage> {
         ),
       ),
     );
-    if (!mounted || settings == null) return;
-    setState(() {
-      _sensitivity = settings.sensitivity;
-      _invertScroll = settings.invertScroll;
-      _haptics = settings.haptics;
-    });
+    if (!mounted) return;
+    if (settings != null) {
+      setState(() {
+        _sensitivity = settings.sensitivity;
+        _invertScroll = settings.invertScroll;
+        _haptics = settings.haptics;
+      });
+    }
   }
 
   @override
@@ -930,9 +928,10 @@ class _SettingsPageState extends State<SettingsPage> {
 
   @override
   Widget build(BuildContext context) => PopScope(
-    canPop: true,
+    canPop: false,
     onPopInvokedWithResult: (didPop, result) {
-      _notifyChange();
+      if (didPop) return;
+      _close();
     },
     child: Scaffold(
       backgroundColor: const Color(0xff090a0c),
