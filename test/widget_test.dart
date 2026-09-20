@@ -16,7 +16,7 @@ void main() {
 
     expect(
       find.text('1-finger move • Tap to click • 2-finger scroll'),
-      findsOneWidget,
+      findsNothing,
     );
     expect(find.text('Left Click'), findsOneWidget);
     expect(find.text('Right Click'), findsOneWidget);

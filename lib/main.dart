@@ -500,6 +500,7 @@ class _TrackpadPageState extends State<TrackpadPage> {
             Row(
               children: [
                 GestureDetector(
+                  behavior: HitTestBehavior.opaque,
                   onTap: () {
                     if (_state == NetworkState.disconnected) {
                       _network.discover();
@@ -508,30 +509,35 @@ class _TrackpadPageState extends State<TrackpadPage> {
                     }
                   },
                   child: Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: const Color(0xff121316),
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: const Color(0xff202226),
-                        width: 1,
+                    width: 36,
+                    height: 36,
+                    alignment: Alignment.centerLeft,
+                    child: Container(
+                      width: 16,
+                      height: 16,
+                      decoration: BoxDecoration(
+                        color: const Color(0xff121316),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: const Color(0xff202226),
+                          width: 1,
+                        ),
                       ),
-                    ),
-                    child: Center(
-                      child: Container(
-                        width: 10,
-                        height: 10,
-                        decoration: BoxDecoration(
-                          color: _indicatorColor,
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: _indicatorColor.withValues(alpha: 0.6),
-                              blurRadius: 8,
-                              spreadRadius: 2,
-                            ),
-                          ],
+                      child: Center(
+                        child: Container(
+                          width: 6,
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: _indicatorColor,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: _indicatorColor.withValues(alpha: 0.5),
+                                blurRadius: 3,
+                                spreadRadius: 0,
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -564,17 +570,9 @@ class _TrackpadPageState extends State<TrackpadPage> {
                       width: 1,
                     ),
                   ),
-                  child: const CustomPaint(
-                    painter: _DotGridPainter(),
-                    child: Center(
-                      child: Text(
-                        '1-finger move • Tap to click • 2-finger scroll',
-                        style: TextStyle(
-                          color: Color(0xff555b66),
-                          fontSize: 13,
-                          letterSpacing: 0.2,
-                        ),
-                      ),
+                  child: const SizedBox.expand(
+                    child: CustomPaint(
+                      painter: _DotGridPainter(),
                     ),
                   ),
                 ),
