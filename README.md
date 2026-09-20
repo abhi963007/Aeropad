@@ -40,17 +40,17 @@
 
 ## 💡 Overview
 
-**AeroPad** transforms your Android device into an ultra-low-latency, hardware-grade virtual trackpad. Unlike conventional "remote mouse" applications that force you to run background server software on your PC and stay on the same Wi-Fi router, **AeroPad emulates a physical Bluetooth Human Interface Device (HID) peripheral directly at the operating system layer**.
+**AeroPad** transforms your Android device into an ultra-low-latency virtual trackpad. The Flutter app sends compact UDP input packets over the local Wi-Fi network or a phone hotspot to a lightweight Python receiver running on the computer.
 
-When you pair your phone with your computer, the host operating system recognizes your phone **identically to a genuine Bluetooth optical mouse (like Logitech or Microsoft peripherals)**.
+The receiver uses `pynput` to apply movement, clicks, dragging, and scrolling through the host operating system input layer. A UDP discovery beacon lets the phone find the computer without manually entering an address.
 
 ---
 
 ## ⚡ Key Features
 
-- **🚫 Zero Host Software:** No `.exe`, no background server daemons, and no extra drivers required on your computer.
-- **🔌 100% Plug & Play:** Connects via standard Windows / macOS / Linux Bluetooth settings.
-- **⚡ Ultra-Low Latency:** Communicates directly over native Bluetooth L2CAP channels, bypassing congested Wi-Fi routers and local firewalls.
+- **🖥️ Lightweight PC Receiver:** One Python script and the `pynput` dependency; no compiled companion application.
+- **📡 Wi-Fi & Hotspot:** Works on a shared Wi-Fi network or directly through a phone hotspot.
+- **⚡ Ultra-Low Latency:** Sends small UDP datagrams directly to the local receiver on port `8989`.
 - **🏢 Enterprise & Workstation Safe:** Operates flawlessly on restricted corporate laptops, school computers, and public kiosks where installing `.exe` servers is blocked by IT administrators.
 - **🎯 Dynamic Cursor Acceleration:** Fluid cursor gliding modeled after high-end laptop trackpads with velocity-based acceleration.
 - **🖐️ Natural Multi-Touch Gestures:** Smooth two-finger scrolling, right-click taps, and double-tap-and-hold drag-and-drop.
@@ -63,12 +63,11 @@ When you pair your phone with your computer, the host operating system recognize
 
 | Feature | Traditional Apps (Remote Mouse, Monect, etc.) | 📱 **AeroPad (Bluetooth HID)** |
 | :--- | :--- | :--- |
-| **PC Companion App** | ❌ Required (heavy background `.exe`) | 🟢 **Zero (Not required at all)** |
-| **Wi-Fi Network Required** | ❌ Yes (must share the same Wi-Fi) | 🟢 **No (Direct Bluetooth link)** |
-| **Works on Restricted / Office PCs** | ❌ Blocked by IT firewalls & policies | 🟢 **100% Compatible (Recognized as physical mouse)** |
-| **Network Latency / Packet Drops** | ❌ Susceptible to Wi-Fi traffic & lag | 🟢 **Sub-millisecond direct radio latency** |
-| **Driver / Admin Privileges** | ❌ Requires Admin installation | 🟢 **Zero Admin privileges required on host** |
-| **Compatibility** | ⚠️ Needs OS-specific server build | 🟢 **Any Bluetooth-enabled host (PC, Mac, Linux, TV)** |
+| **PC Companion App** | ❌ Often heavy or cloud-dependent | 🟢 **One lightweight Python receiver** |
+| **Wi-Fi Network Required** | ❌ Usually requires the same configured network | 🟢 **Wi-Fi or phone hotspot** |
+| **Discovery** | ⚠️ Manual host setup is common | 🟢 **Automatic UDP beacon discovery** |
+| **Input Transport** | ❌ May use high-overhead polling | 🟢 **Direct UDP packets on the LAN** |
+| **Compatibility** | ⚠️ Needs OS-specific server build | 🟢 **Windows, macOS, and Linux via pynput** |
 
 ---
 
@@ -81,24 +80,21 @@ flowchart TD
     subgraph MobileApp ["📱 Android Device (AeroPad)"]
         UI["Touchpad Surface UI\n(Flutter)\n"]
         GE["Gesture Engine\n(Delta X, Delta Y, Taps, Velocity Curve)"]
-        HID_Service["Bluetooth HID Service\n(android.bluetooth.BluetoothHidDevice)"]
-        Descriptor["HID Mouse Descriptor\n(Standard 3-Button + Scroll Wheel)"]
+        Network["UDP NetworkMouseClient\n(Discovery + Input Packets)"]
 
         UI -->|Pointer Coordinates| GE
-        GE -->|Displacement Vectors & Button States| HID_Service
-        Descriptor -.->|Registers profile| HID_Service
+        GE -->|JSON movement, click, scroll packets| Network
     end
 
-    subgraph RadioLayer ["📡 Bluetooth Air Link"]
-        HID_Service -->|Raw 4-Byte HID Report Frames| L2CAP["Bluetooth L2CAP / HID Channel"]
+    subgraph RadioLayer ["📡 Wi-Fi / Phone Hotspot"]
+        Network -->|UDP 8989 + Discovery 8988| Receiver["Python AeroPad Receiver"]
     end
 
     subgraph HostSystem ["💻 Host Computer (Windows / Mac / Linux / TV)"]
-        OS_Driver["Native OS Bluetooth HID Driver\n(Zero 3rd-party software)"]
-        OS_Kernel["OS Input Subsystem\n(User32 / Cocoa / evdev)"]
+        OS_Driver["pynput / OS Input API"]
         Cursor["System Mouse Pointer & Desktop Input"]
 
-        L2CAP --> OS_Driver
+        Receiver --> OS_Driver
         OS_Driver --> OS_Kernel
         OS_Kernel --> Cursor
     end
@@ -111,29 +107,27 @@ sequenceDiagram
     autonumber
     actor User
     participant Phone as 📱 AeroPad App
-    participant BT as 📡 Bluetooth HID Profile
-    participant PC as 💻 Host PC (Windows/Mac)
+    participant Network as 📡 Local Wi-Fi / Hotspot
+    participant PC as 💻 Python AeroPad Server
 
-    User->>Phone: Launches AeroPad & enables HID Mode
-    Phone->>BT: Registers HID Device Profile with Android Bluetooth stack
-    User->>PC: Opens Bluetooth Settings & selects AeroPad
-    PC->>BT: Pair & Connect (Recognized as "Standard Bluetooth Mouse")
-    BT-->>Phone: Connection Established (L2CAP Socket open)
+    User->>Phone: Launches AeroPad
+    Phone->>Network: Broadcasts AEROPAD_DISCOVERY on UDP 8988
+    Network-->>Phone: Returns PC name and UDP port 8989
+    Phone->>PC: Sends JSON input packets over UDP
     
     loop Real-Time Input Loop (<2ms latency)
         User->>Phone: Glides finger across screen
         Phone->>Phone: Calculates (dx, dy) with acceleration
-        Phone->>BT: Dispatches 4-Byte HID Report [Buttons, dx, dy, wheel]
-        BT->>PC: Delivers HID Report via native Bluetooth stack
-        PC->>PC: Native OS moves cursor immediately
+        Phone->>PC: Sends move / click / scroll packet
+        PC->>PC: pynput updates the system cursor immediately
     end
 ```
 
 ---
 
-## 📦 HID Report Descriptor Specification
+## 📦 UDP Input Protocol
 
-AeroPad registers a compliant USB-IF Human Interface Device descriptor. Every motion and touch action translates into a **compact 4-byte report frame**:
+The phone sends compact JSON datagrams to the Python receiver on UDP port `8989`:
 
 ```
 +----------------+----------------+----------------+----------------+
@@ -173,14 +167,13 @@ AeroPad registers a compliant USB-IF Human Interface Device descriptor. Every mo
 
 ## 💻 Host Compatibility Matrix
 
-AeroPad conforms to the universal Bluetooth HID standard, making it natively compatible with virtually any Bluetooth-enabled device:
+AeroPad works with computers that can run Python and `pynput`:
 
 - 🪟 **Windows:** Windows 10, Windows 11 (Works on locked corporate workstations and login screens)
 - 🍎 **macOS:** macOS Catalina, Big Sur, Monterey, Ventura, Sonoma, Sequoia
 - 🐧 **Linux:** Ubuntu, Fedora, Debian, Arch Linux (Native BlueZ HID support)
 - 🌐 **ChromeOS:** Chromebooks & Chromeboxes
-- 📺 **Smart TVs & Media Centers:** Android TV, Google TV, Apple TV, Fire TV, WebOS
-- 🍓 **Single Board Computers:** Raspberry Pi OS
+- 🍓 **Single Board Computers:** Raspberry Pi OS with a desktop session
 
 ---
 
@@ -188,21 +181,26 @@ AeroPad conforms to the universal Bluetooth HID standard, making it natively com
 
 1. **Prerequisites:**
    - Android smartphone running **Android 9.0 (Pie / API 28) or higher**.
-   - Host PC/Laptop with built-in Bluetooth or USB Bluetooth dongle.
+   - Python 3.9+ on the host computer.
+   - Phone and computer on the same Wi-Fi network, or the computer connected to the phone hotspot.
 
-2. **Step-by-Step Connection:**
-   1. Open **AeroPad** on your smartphone.
-   2. Turn on **Bluetooth** when prompted.
-   3. The app will register the HID profile and make the phone discoverable.
-   4. On your PC, navigate to:
-      - **Windows:** `Settings` ➔ `Bluetooth & devices` ➔ `Add device` ➔ `Bluetooth`.
-      - **macOS:** `System Settings` ➔ `Bluetooth`.
-   5. Select **AeroPad** from the list of available devices.
-   6. Confirm pairing. Once connected, your phone's screen immediately starts controlling the computer cursor!
+2. **Start the PC receiver:**
+   ```bash
+   cd server
+   python -m pip install -r requirements.txt
+   python aeropad_server.py
+   ```
+
+3. **Connect the phone:**
+   1. Connect the phone and computer to the same Wi-Fi network or phone hotspot.
+   2. Open **AeroPad**. It broadcasts a discovery request and automatically connects to the first receiver response.
+   3. If discovery is blocked by the network, open Settings and enter the PC's printed IP address and port `8989` manually.
+
+Allow inbound UDP traffic on ports `8988` and `8989` in the PC firewall when prompted.
 
 ## 🛠️ Development Setup
 
-This repository is a Flutter Android application. Flutter renders the interface and handles gestures; the Android Kotlin layer exposes the native `BluetoothHidDevice` API through `com.aeropad/hid` and `com.aeropad/hid_state` platform channels.
+This repository is a Flutter Android application. Flutter renders the interface and handles gestures; `NetworkMouseClient` sends UDP packets to `server/aeropad_server.py`.
 
 ```bash
 flutter pub get
@@ -228,8 +226,10 @@ AeroPad/
 │   └── main.dart                               # Flutter UI, gestures, and HID calls
 ├── test/
 │   └── widget_test.dart                        # Flutter widget smoke tests
-├── Project_Abstract.docx                       # Full research specifications
-├── Project_Abstract.doc
+├── docs/
+│   ├── Project_Abstract.docx                   # Full research specifications
+│   ├── Project_Abstract.doc
+│   └── RESEARCH_AND_ARCHITECTURE.md            # Technical architecture and specs
 ├── assets/
 │   └── banner.png                             # Project visual banner
 ├── pubspec.yaml                                # Flutter dependencies and app metadata
@@ -246,7 +246,7 @@ AeroPad/
 - [x] Standard HID Mouse Report Descriptor formulation
 - [x] Project Abstract & Technical Documentation
 - [x] Flutter Android project scaffolding
-- [x] `BluetoothHidDevice` registration & state callback pipeline
+- [x] UDP receiver, discovery beacon, and Flutter network client
 - [x] Flutter touchpad surface and dark AeroPad interface
 - [x] Two-finger scroll & acceleration algorithms
 - [ ] Double-tap-and-hold drag-and-drop gesture
@@ -260,8 +260,9 @@ AeroPad/
 ## 📄 Documentation Files
 
 The repository includes complete technical specifications and formal project documents:
-- 📑 [**Project_Abstract.docx**](Project_Abstract.docx) - Formatted Microsoft Word Document
-- 📑 [**Project_Abstract.doc**](Project_Abstract.doc) - Legacy Word Document
+- 📑 [**Project_Abstract.docx**](docs/Project_Abstract.docx) - Formatted Microsoft Word Document
+- 📑 [**Project_Abstract.doc**](docs/Project_Abstract.doc) - Legacy Word Document
+- 📑 [**RESEARCH_AND_ARCHITECTURE.md**](docs/RESEARCH_AND_ARCHITECTURE.md) - Complete Technical Architecture
 
 ---
 

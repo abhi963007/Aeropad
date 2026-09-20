@@ -1,73 +1,156 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 void main() => runApp(const AeroPadApp());
 
-enum HidConnection { disconnected, discoverable, connected }
+enum NetworkState { disconnected, searching, connected }
 
-class BondedDevice {
-  const BondedDevice({required this.name, required this.address});
+class DiscoveredPc {
+  const DiscoveredPc({
+    required this.name,
+    required this.address,
+    this.port = 8989,
+  });
+  final String name;
+  final String address;
+  final int port;
+}
+
+class NetworkStatus {
+  const NetworkStatus(this.state, {this.name = '', this.address = ''});
+  final NetworkState state;
   final String name;
   final String address;
 }
 
-class HidBridge {
-  static const _methods = MethodChannel('com.aeropad/hid');
-  static const _events = EventChannel('com.aeropad/hid_state');
+class NetworkMouseClient {
+  static const commandPort = 8989;
+  static const discoveryPort = 8988;
+  RawDatagramSocket? _socket;
+  StreamSubscription<RawSocketEvent>? _subscription;
+  Timer? _discoveryTimer;
+  final _status = StreamController<NetworkStatus>.broadcast();
+  final _pcs = StreamController<List<DiscoveredPc>>.broadcast();
+  DiscoveredPc? _connected;
+  static const _probeAddresses = <String>[
+    '192.168.137.1',
+    '192.168.43.1',
+    '127.0.0.1',
+    '255.255.255.255',
+  ];
 
-  Stream<HidStatus> get states => _events.receiveBroadcastStream().map((value) {
-    final data = Map<Object?, Object?>.from(value as Map);
-    switch (data['state']) {
-      case 'connected':
-        return HidStatus(
-          HidConnection.connected,
-          data['name'] as String? ?? 'Bluetooth host',
-        );
-      case 'discoverable':
-        return const HidStatus(HidConnection.discoverable, '');
-      default:
-        return const HidStatus(HidConnection.disconnected, '');
-    }
-  });
+  Stream<NetworkStatus> get statuses => _status.stream;
+  Stream<List<DiscoveredPc>> get discoveries => _pcs.stream;
 
-  Future<void> connect() => _methods.invokeMethod('connect');
-  Future<void> makeDiscoverable() => _methods.invokeMethod('makeDiscoverable');
-  Future<void> disconnect() => _methods.invokeMethod('disconnect');
-  Future<List<BondedDevice>> bondedDevices() async {
-    final result =
-        await _methods.invokeListMethod<Object?>('getBondedDevices') ??
-        const [];
-    return result.map((item) {
-      final data = Map<Object?, Object?>.from(item as Map);
-      return BondedDevice(
-        name: data['name'] as String? ?? 'Unknown device',
-        address: data['address'] as String? ?? '',
-      );
-    }).toList();
+  Future<void> start() async {
+    _socket ??= await RawDatagramSocket.bind(
+      InternetAddress.anyIPv4,
+      discoveryPort,
+      reuseAddress: true,
+    );
+    _socket!.broadcastEnabled = true;
+    _subscription ??= _socket!.listen((event) {
+      if (event != RawSocketEvent.read) return;
+      final datagram = _socket!.receive();
+      if (datagram == null) return;
+      _handleDiscovery(datagram.data, datagram.address.address);
+    });
+    _status.add(const NetworkStatus(NetworkState.searching));
+    await discover();
+    _discoveryTimer ??= Timer.periodic(
+      const Duration(seconds: 2),
+      (_) => discover(),
+    );
   }
 
-  Future<void> connectToDevice(String address) =>
-      _methods.invokeMethod('connectToDevice', {'address': address});
+  Future<void> discover() async {
+    await startIfNeeded();
+    final payload = utf8.encode(jsonEncode({'type': 'AEROPAD_DISCOVERY'}));
+    for (final address in _probeAddresses) {
+      try {
+        _socket!.send(payload, InternetAddress(address), discoveryPort);
+      } on SocketException {
+        // A gateway may not exist on the current network; continue probing.
+      }
+    }
+    _status.add(const NetworkStatus(NetworkState.searching));
+  }
 
-  Future<void> send({int buttons = 0, int dx = 0, int dy = 0, int wheel = 0}) =>
-      _methods.invokeMethod('sendReport', {
-        'buttons': buttons,
-        'dx': dx,
-        'dy': dy,
-        'wheel': wheel,
-      });
-}
+  Future<void> startIfNeeded() async {
+    if (_socket == null) await start();
+  }
 
-class HidStatus {
-  const HidStatus(this.connection, this.deviceName);
-  final HidConnection connection;
-  final String deviceName;
+  void _handleDiscovery(List<int> bytes, String sourceAddress) {
+    try {
+      final packet = jsonDecode(utf8.decode(bytes));
+      if (packet is! Map || packet['type'] != 'AEROPAD_DISCOVERY_RESPONSE') {
+        return;
+      }
+      final pc = DiscoveredPc(
+        name: '${packet['name'] ?? sourceAddress}',
+        address: sourceAddress,
+        port: (packet['port'] as num?)?.toInt() ?? commandPort,
+      );
+      if (_connected?.address != sourceAddress) {
+        _pcs.add([pc]);
+        connect(pc);
+      }
+    } catch (_) {
+      // Ignore unrelated broadcast traffic on the discovery port.
+    }
+  }
+
+  Future<void> connect(DiscoveredPc pc) async {
+    await startIfNeeded();
+    _connected = pc;
+    _status.add(
+      NetworkStatus(NetworkState.connected, name: pc.name, address: pc.address),
+    );
+  }
+
+  Future<void> connectManual(String address, int port) async {
+    final pc = DiscoveredPc(name: address, address: address, port: port);
+    await connect(pc);
+    send({'type': 'move', 'dx': 0, 'dy': 0});
+  }
+
+  void send(Map<String, Object> packet) {
+    final target = _connected;
+    final socket = _socket;
+    if (target == null || socket == null) return;
+    socket.send(
+      utf8.encode(jsonEncode(packet)),
+      InternetAddress(target.address),
+      target.port,
+    );
+  }
+
+  void move(int dx, int dy) => send({'type': 'move', 'dx': dx, 'dy': dy});
+  void scroll(int dy) => send({'type': 'scroll', 'dy': dy});
+  void click(String button) => send({'type': 'click', 'btn': button});
+  void buttonDown(String button) => send({'type': 'down', 'btn': button});
+  void buttonUp(String button) => send({'type': 'up', 'btn': button});
+
+  Future<void> disconnect() async {
+    _connected = null;
+    _status.add(const NetworkStatus(NetworkState.disconnected));
+  }
+
+  Future<void> dispose() async {
+    _discoveryTimer?.cancel();
+    await _subscription?.cancel();
+    _socket?.close();
+    await _status.close();
+    await _pcs.close();
+  }
 }
 
 class AeroPadApp extends StatelessWidget {
   const AeroPadApp({super.key});
-
   @override
   Widget build(BuildContext context) => MaterialApp(
     debugShowCheckedModeBanner: false,
@@ -87,42 +170,50 @@ class TrackpadPage extends StatefulWidget {
 }
 
 class _TrackpadPageState extends State<TrackpadPage> {
-  final _hid = HidBridge();
+  final _network = NetworkMouseClient();
   final Map<int, Offset> _pointers = {};
-  final List<Offset> _traces = [];
-  StreamSubscription<HidStatus>? _subscription;
-  HidConnection _connection = HidConnection.disconnected;
+  StreamSubscription<NetworkStatus>? _statusSubscription;
+  NetworkState _state = NetworkState.searching;
   String _deviceName = '';
+  String _address = '';
   double _sensitivity = 1;
   bool _invertScroll = false;
   bool _haptics = true;
   Offset? _last;
+  Offset? _downPosition;
+  DateTime? _lastTapTime;
+  Offset? _lastTapPosition;
   bool _moved = false;
+  bool _isPotentialDrag = false;
+  bool _dragging = false;
   int _fingerCount = 0;
 
   @override
   void initState() {
     super.initState();
-    _subscription = _hid.states.listen(
-      (status) => setState(() {
-        _connection = status.connection;
-        _deviceName = status.deviceName;
-      }),
-    );
-    _hid.connect();
+    _statusSubscription = _network.statuses.listen((status) {
+      if (!mounted) return;
+      setState(() {
+        _state = status.state;
+        _deviceName = status.name;
+        _address = status.address;
+      });
+    });
+    _network.start();
   }
 
   @override
   void dispose() {
-    _subscription?.cancel();
+    _statusSubscription?.cancel();
+    _network.dispose();
     super.dispose();
   }
 
-  String get _status => switch (_connection) {
-    HidConnection.connected =>
-      'Connected: ${_deviceName.isEmpty ? 'Bluetooth host' : _deviceName}',
-    HidConnection.discoverable => 'Discoverable / Pairing Mode...',
-    HidConnection.disconnected => 'Disconnected',
+  String get _status => switch (_state) {
+    NetworkState.connected =>
+      'Connected: ${_deviceName.isEmpty ? (_address.isEmpty ? "Windows PC" : _address) : _deviceName}',
+    NetworkState.searching => 'Searching for PC on Wi-Fi...',
+    NetworkState.disconnected => 'Disconnected (Tap to search)',
   };
 
   int _accelerate(double value) {
@@ -130,15 +221,27 @@ class _TrackpadPageState extends State<TrackpadPage> {
     return (((magnitude + magnitude * magnitude * .018) * value.sign) *
             _sensitivity)
         .round()
-        .clamp(-127, 127);
+        .clamp(-32767, 32767);
   }
 
   void _down(PointerDownEvent event) {
     _pointers[event.pointer] = event.position;
     _fingerCount = _pointers.length;
     _last = event.position;
+    _downPosition = event.position;
     _moved = false;
-    setState(() => _traces.add(event.position));
+
+    if (_fingerCount == 1 &&
+        _lastTapTime != null &&
+        _lastTapPosition != null &&
+        DateTime.now().difference(_lastTapTime!).inMilliseconds < 350 &&
+        (event.position - _lastTapPosition!).distance < 50) {
+      _isPotentialDrag = true;
+      _dragging = false;
+    } else {
+      _isPotentialDrag = false;
+      _dragging = false;
+    }
   }
 
   void _move(PointerMoveEvent event) {
@@ -147,45 +250,101 @@ class _TrackpadPageState extends State<TrackpadPage> {
     if (previous == null) return;
     final delta = event.position - previous;
     if (delta.distance < .1) return;
-    _moved = true;
-    setState(() {
-      _traces.add(event.position);
-      if (_traces.length > 20) _traces.removeAt(0);
-    });
+
+    final totalDistance = _downPosition != null
+        ? (event.position - _downPosition!).distance
+        : delta.distance;
+
+    if (totalDistance > 6.0) {
+      _moved = true;
+    }
+
     if (_pointers.length >= 2) {
+      if (_dragging) {
+        _network.buttonUp('left');
+        _dragging = false;
+      }
+      _isPotentialDrag = false;
       final direction = _invertScroll ? 1 : -1;
-      _hid.send(wheel: (direction * delta.dy / 5).round().clamp(-127, 127));
+      _network.scroll((direction * delta.dy * _sensitivity / 5).round());
     } else {
-      _hid.send(dx: _accelerate(delta.dx), dy: _accelerate(delta.dy));
+      if (_isPotentialDrag && _moved && !_dragging) {
+        _dragging = true;
+        _network.buttonDown('left');
+        if (_haptics) HapticFeedback.selectionClick();
+      }
+      _network.move(_accelerate(delta.dx), _accelerate(delta.dy));
     }
   }
 
   void _up(PointerUpEvent event) {
     _pointers.remove(event.pointer);
     if (_pointers.isNotEmpty) return;
-    if (!_moved) _click(_fingerCount >= 2 ? 2 : 1);
+
+    final totalDistance = _downPosition != null
+        ? (event.position - _downPosition!).distance
+        : 0.0;
+    final didMove = _moved || totalDistance > 6.0;
+
+    if (_dragging) {
+      _network.buttonUp('left');
+      if (_haptics) HapticFeedback.selectionClick();
+      _dragging = false;
+      _isPotentialDrag = false;
+      _lastTapTime = null;
+      _lastTapPosition = null;
+    } else if (_isPotentialDrag && !didMove) {
+      _network.click('left');
+      if (_haptics) HapticFeedback.selectionClick();
+      _isPotentialDrag = false;
+      _lastTapTime = null;
+      _lastTapPosition = null;
+    } else if (!didMove) {
+      final button = _fingerCount >= 2 ? 'right' : 'left';
+      _network.click(button);
+      if (_fingerCount == 1) {
+        _lastTapTime = DateTime.now();
+        _lastTapPosition = event.position;
+      } else {
+        _lastTapTime = null;
+        _lastTapPosition = null;
+      }
+      if (_haptics) HapticFeedback.selectionClick();
+    } else {
+      _lastTapTime = null;
+      _lastTapPosition = null;
+    }
+
     _last = null;
+    _downPosition = null;
     _moved = false;
+    _dragging = false;
+    _isPotentialDrag = false;
     _fingerCount = 0;
-    setState(() => _traces.clear());
   }
 
-  Future<void> _click(int button) async {
-    await _hid.send(buttons: button);
-    await Future<void>.delayed(const Duration(milliseconds: 30));
-    await _hid.send();
-    if (_haptics) HapticFeedback.selectionClick();
+  void _cancel(PointerCancelEvent event) {
+    _pointers.remove(event.pointer);
+    if (_pointers.isEmpty && _dragging) {
+      _network.buttonUp('left');
+      _dragging = false;
+    }
+    _isPotentialDrag = false;
+    _last = null;
+    _downPosition = null;
+    _fingerCount = 0;
   }
 
   Future<void> _openSettings() async {
     final settings = await Navigator.of(context).push<SettingsResult>(
       MaterialPageRoute(
         builder: (_) => SettingsPage(
-          hid: _hid,
+          network: _network,
           sensitivity: _sensitivity,
           invertScroll: _invertScroll,
           haptics: _haptics,
-          connected: _connection == HidConnection.connected,
+          connected: _state == NetworkState.connected,
+          connectedAddress: _address,
         ),
       ),
     );
@@ -199,82 +358,100 @@ class _TrackpadPageState extends State<TrackpadPage> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
+    backgroundColor: const Color(0xff090a0c),
     body: SafeArea(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
         child: Column(
           children: [
             Row(
               children: [
                 const Text(
                   'AeroPad',
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
                 ),
                 const Spacer(),
                 GestureDetector(
-                  onTap: _openSettings,
+                  onTap: () {
+                    if (_state == NetworkState.disconnected) {
+                      _network.discover();
+                    }
+                    _openSettings();
+                  },
                   child: Row(
                     children: [
                       Container(
-                        width: 8,
-                        height: 8,
+                        width: 9,
+                        height: 9,
                         decoration: BoxDecoration(
-                          color: _connection == HidConnection.connected
-                              ? const Color(0xff78e08f)
-                              : _connection == HidConnection.discoverable
+                          color: _state == NetworkState.connected
+                              ? const Color(0xff2ecc71)
+                              : _state == NetworkState.searching
                               ? const Color(0xffffc857)
                               : const Color(0xff8d939b),
                           shape: BoxShape.circle,
-                          boxShadow: _connection == HidConnection.connected
+                          boxShadow: _state == NetworkState.connected
                               ? const [
                                   BoxShadow(
-                                    color: Color(0x9978e08f),
-                                    blurRadius: 8,
+                                    color: Color(0x882ecc71),
+                                    blurRadius: 6,
+                                    spreadRadius: 1,
                                   ),
                                 ]
                               : null,
                         ),
                       ),
-                      const SizedBox(width: 7),
+                      const SizedBox(width: 8),
                       Text(
                         _status,
                         style: const TextStyle(
-                          color: Color(0xffb0b6bd),
-                          fontSize: 12,
+                          color: Color(0xffa0a5ad),
+                          fontSize: 13,
                         ),
                       ),
                     ],
                   ),
                 ),
+                const SizedBox(width: 6),
                 IconButton(
                   onPressed: _openSettings,
                   icon: const Icon(
                     Icons.settings_outlined,
-                    color: Color(0xffb0b6bd),
+                    color: Color(0xff8a909a),
+                    size: 22,
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             Expanded(
               child: Listener(
                 onPointerDown: _down,
                 onPointerMove: _move,
                 onPointerUp: _up,
-                onPointerCancel: (event) => _pointers.remove(event.pointer),
+                onPointerCancel: _cancel,
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     color: const Color(0xff121316),
                     borderRadius: BorderRadius.circular(28),
+                    border: Border.all(
+                      color: const Color(0xff202226),
+                      width: 1,
+                    ),
                   ),
-                  child: CustomPaint(
-                    painter: _SurfacePainter(_traces),
-                    child: const Center(
+                  child: const CustomPaint(
+                    painter: _DotGridPainter(),
+                    child: Center(
                       child: Text(
                         '1-finger move • Tap to click • 2-finger scroll',
                         style: TextStyle(
-                          color: Color(0xff747980),
-                          fontSize: 12,
+                          color: Color(0xff555b66),
+                          fontSize: 13,
+                          letterSpacing: 0.2,
                         ),
                       ),
                     ),
@@ -282,8 +459,17 @@ class _TrackpadPageState extends State<TrackpadPage> {
                 ),
               ),
             ),
-            const SizedBox(height: 16),
-            _ClickBar(onLeft: () => _click(1), onRight: () => _click(2)),
+            const SizedBox(height: 14),
+            _ClickBar(
+              onLeft: () {
+                _network.click('left');
+                if (_haptics) HapticFeedback.selectionClick();
+              },
+              onRight: () {
+                _network.click('right');
+                if (_haptics) HapticFeedback.selectionClick();
+              },
+            ),
           ],
         ),
       ),
@@ -297,7 +483,6 @@ class SettingsResult {
     required this.invertScroll,
     required this.haptics,
   });
-
   final double sensitivity;
   final bool invertScroll;
   final bool haptics;
@@ -305,20 +490,20 @@ class SettingsResult {
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({
-    required this.hid,
+    required this.network,
     required this.sensitivity,
     required this.invertScroll,
     required this.haptics,
     required this.connected,
+    required this.connectedAddress,
     super.key,
   });
-
-  final HidBridge hid;
+  final NetworkMouseClient network;
   final double sensitivity;
   final bool invertScroll;
   final bool haptics;
   final bool connected;
-
+  final String connectedAddress;
   @override
   State<SettingsPage> createState() => _SettingsPageState();
 }
@@ -327,37 +512,39 @@ class _SettingsPageState extends State<SettingsPage> {
   late double _sensitivity = widget.sensitivity;
   late bool _invertScroll = widget.invertScroll;
   late bool _haptics = widget.haptics;
-  List<BondedDevice> _devices = const [];
-  bool _loadingDevices = true;
+  final _ipController = TextEditingController();
+  final _portController = TextEditingController(text: '8989');
+  DiscoveredPc? _discovered;
+  StreamSubscription<List<DiscoveredPc>>? _discoverySubscription;
 
   @override
   void initState() {
     super.initState();
-    _loadDevices();
+    _discoverySubscription = widget.network.discoveries.listen((pcs) {
+      if (mounted && pcs.isNotEmpty) setState(() => _discovered = pcs.first);
+    });
   }
 
-  Future<void> _loadDevices() async {
-    try {
-      final devices = await widget.hid.bondedDevices();
-      if (mounted) {
-        setState(() {
-          _devices = devices;
-          _loadingDevices = false;
-        });
-      }
-    } on PlatformException {
-      if (mounted) setState(() => _loadingDevices = false);
-    }
+  @override
+  void dispose() {
+    _discoverySubscription?.cancel();
+    _ipController.dispose();
+    _portController.dispose();
+    super.dispose();
   }
 
-  void _close() {
-    Navigator.of(context).pop(
-      SettingsResult(
-        sensitivity: _sensitivity,
-        invertScroll: _invertScroll,
-        haptics: _haptics,
-      ),
-    );
+  void _close() => Navigator.of(context).pop(
+    SettingsResult(
+      sensitivity: _sensitivity,
+      invertScroll: _invertScroll,
+      haptics: _haptics,
+    ),
+  );
+
+  Future<void> _manualConnect() async {
+    final port = int.tryParse(_portController.text.trim()) ?? 8989;
+    final ip = _ipController.text.trim();
+    if (ip.isNotEmpty) await widget.network.connectManual(ip, port);
   }
 
   @override
@@ -376,73 +563,121 @@ class _SettingsPageState extends State<SettingsPage> {
     body: ListView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
       children: [
-        const _SectionTitle('Device Pairing'),
+        const _SectionTitle('Network'),
         _SettingsCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text(
-                'Make your phone visible to nearby Bluetooth devices for five minutes.',
-                style: TextStyle(color: Color(0xff9ca2aa), height: 1.4),
-              ),
-              const SizedBox(height: 14),
               FilledButton.icon(
-                onPressed: widget.hid.makeDiscoverable,
-                icon: const Icon(Icons.bluetooth_searching),
-                label: const Text('Make Phone Discoverable (5 Mins)'),
+                onPressed: widget.network.discover,
+                icon: const Icon(Icons.wifi_find),
+                label: const Text('Auto-Discover PC'),
                 style: FilledButton.styleFrom(
                   backgroundColor: const Color(0xff78e08f),
                   foregroundColor: const Color(0xff09100b),
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
               ),
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                onPressed: () =>
+                    widget.network.connectManual('192.168.137.1', 8989),
+                icon: const Icon(Icons.router_outlined),
+                label: const Text('Connect via Laptop Hotspot (192.168.137.1)'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xffb0b6bd),
+                  side: const BorderSide(color: Color(0xff303238)),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+              ),
+              if (_discovered != null) ...[
+                const SizedBox(height: 14),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const CircleAvatar(
+                    backgroundColor: Color(0xff202d24),
+                    child: Icon(Icons.computer, color: Color(0xff78e08f)),
+                  ),
+                  title: Row(
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          color: Color(0xff78e08f),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text(_discovered!.name)),
+                      if (widget.connected &&
+                          widget.connectedAddress == _discovered!.address)
+                        const Text(
+                          'Connected',
+                          style: TextStyle(
+                            color: Color(0xff78e08f),
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                    ],
+                  ),
+                  subtitle: Text(
+                    '${_discovered!.address}:${_discovered!.port}',
+                    style: const TextStyle(
+                      color: Color(0xff747980),
+                      fontSize: 11,
+                    ),
+                  ),
+                  trailing: TextButton(
+                    onPressed: () => widget.network.connect(_discovered!),
+                    child: const Text('Connect'),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 14),
+              TextField(
+                controller: _ipController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Manual IP address',
+                  hintText: '192.168.43.1',
+                  prefixIcon: Icon(Icons.lan_outlined),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _portController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Port',
+                  prefixIcon: Icon(Icons.numbers),
+                ),
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton(
+                onPressed: _manualConnect,
+                child: const Text('Connect to IP'),
+              ),
+              if (widget.connected)
+                TextButton(
+                  onPressed: widget.network.disconnect,
+                  child: const Text(
+                    'Disconnect',
+                    style: TextStyle(color: Color(0xffff8a80)),
+                  ),
+                ),
             ],
           ),
         ),
         const SizedBox(height: 24),
-        Row(
-          children: [
-            const _SectionTitle('Paired Devices'),
-            const Spacer(),
-            IconButton(
-              onPressed: _loadDevices,
-              icon: const Icon(Icons.refresh, color: Color(0xff9ca2aa)),
-            ),
-          ],
-        ),
-        _SettingsCard(
-          child: _loadingDevices
-              ? const Padding(
-                  padding: EdgeInsets.all(8),
-                  child: Center(
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                )
-              : _devices.isEmpty
-              ? const Text(
-                  'No paired Bluetooth computers found.',
-                  style: TextStyle(color: Color(0xff9ca2aa)),
-                )
-              : Column(
-                  children: _devices
-                      .map(
-                        (device) => _DeviceRow(
-                          device: device,
-                          hid: widget.hid,
-                          connected: widget.connected,
-                        ),
-                      )
-                      .toList(),
-                ),
-        ),
-        const SizedBox(height: 24),
-        const _SectionTitle('Pointer'),
+        const _SectionTitle('Tuning'),
         _SettingsCard(
           child: Column(
             children: [
               Row(
                 children: [
-                  const Text('Pointer Sensitivity'),
+                  const Text('Cursor Sensitivity'),
                   const Spacer(),
                   Text(
                     '${_sensitivity.toStringAsFixed(1)}x',
@@ -464,21 +699,13 @@ class _SettingsPageState extends State<SettingsPage> {
               const Divider(color: Color(0xff303238)),
               SwitchListTile.adaptive(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Invert Scroll'),
-                subtitle: const Text(
-                  'Reverse two-finger scroll direction',
-                  style: TextStyle(color: Color(0xff858b93)),
-                ),
+                title: const Text('Invert Scroll Direction'),
                 value: _invertScroll,
                 onChanged: (value) => setState(() => _invertScroll = value),
               ),
               SwitchListTile.adaptive(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Haptic Vibration'),
-                subtitle: const Text(
-                  'Vibrate on mouse clicks',
-                  style: TextStyle(color: Color(0xff858b93)),
-                ),
+                title: const Text('Haptic Feedback'),
                 value: _haptics,
                 onChanged: (value) => setState(() => _haptics = value),
               ),
@@ -530,87 +757,52 @@ class _SettingsCard extends StatelessWidget {
   );
 }
 
-class _DeviceRow extends StatelessWidget {
-  const _DeviceRow({
-    required this.device,
-    required this.hid,
-    required this.connected,
-  });
-  final BondedDevice device;
-  final HidBridge hid;
-  final bool connected;
-  @override
-  Widget build(BuildContext context) => ListTile(
-    contentPadding: EdgeInsets.zero,
-    leading: const CircleAvatar(
-      backgroundColor: Color(0xff202d24),
-      child: Icon(Icons.computer, color: Color(0xff78e08f)),
-    ),
-    title: Text(device.name),
-    subtitle: Text(
-      device.address,
-      style: const TextStyle(color: Color(0xff747980), fontSize: 11),
-    ),
-    trailing: TextButton(
-      onPressed: connected
-          ? hid.disconnect
-          : () => hid.connectToDevice(device.address),
-      child: Text(connected ? 'Disconnect' : 'Connect'),
-    ),
-  );
-}
+class _DotGridPainter extends CustomPainter {
+  const _DotGridPainter();
 
-class _SurfacePainter extends CustomPainter {
-  _SurfacePainter(this.traces);
-  final List<Offset> traces;
   @override
   void paint(Canvas canvas, Size size) {
-    final dot = Paint()..color = const Color(0xff26282c);
-    for (double x = 11; x < size.width; x += 22) {
-      for (double y = 11; y < size.height; y += 22) {
-        canvas.drawCircle(Offset(x, y), 1.1, dot);
+    final dot = Paint()..color = const Color(0xff22252a);
+    for (double x = 16; x < size.width; x += 24) {
+      for (double y = 16; y < size.height; y += 24) {
+        canvas.drawCircle(Offset(x, y), 1.0, dot);
       }
-    }
-    for (var i = 0; i < traces.length; i++) {
-      final opacity = (i + 1) / traces.length;
-      canvas.drawCircle(
-        traces[i],
-        22,
-        Paint()
-          ..color = const Color(0xff78e08f).withValues(alpha: opacity * .25),
-      );
-      canvas.drawCircle(
-        traces[i],
-        4,
-        Paint()..color = const Color(0xff78e08f).withValues(alpha: opacity),
-      );
     }
   }
 
   @override
-  bool shouldRepaint(covariant _SurfacePainter oldDelegate) =>
-      oldDelegate.traces != traces;
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _ClickBar extends StatelessWidget {
   const _ClickBar({required this.onLeft, required this.onRight});
   final VoidCallback onLeft;
   final VoidCallback onRight;
+
   @override
   Widget build(BuildContext context) => Container(
-    height: 72,
+    height: 70,
     decoration: BoxDecoration(
       color: const Color(0xff121316),
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(color: const Color(0xff202226), width: 1),
     ),
     child: Row(
       children: [
         Expanded(
-          child: _Button(icon: '◐', label: 'Left Click', onTap: onLeft),
+          child: _Button(
+            isRight: false,
+            label: 'Left Click',
+            onTap: onLeft,
+          ),
         ),
-        Container(width: 1, height: 38, color: const Color(0xff303238)),
+        Container(width: 1, height: 40, color: const Color(0xff23262b)),
         Expanded(
-          child: _Button(icon: '◑', label: 'Right Click', onTap: onRight),
+          child: _Button(
+            isRight: true,
+            label: 'Right Click',
+            onTap: onRight,
+          ),
         ),
       ],
     ),
@@ -618,26 +810,114 @@ class _ClickBar extends StatelessWidget {
 }
 
 class _Button extends StatelessWidget {
-  const _Button({required this.icon, required this.label, required this.onTap});
-  final String icon;
+  const _Button({
+    required this.isRight,
+    required this.label,
+    required this.onTap,
+  });
+
+  final bool isRight;
   final String label;
   final VoidCallback onTap;
+
   @override
   Widget build(BuildContext context) => InkWell(
+    borderRadius: BorderRadius.circular(20),
     onTap: onTap,
     child: Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Text(
-          icon,
-          style: const TextStyle(color: Color(0xff78e08f), fontSize: 27),
-        ),
-        const SizedBox(width: 10),
+        _MouseIcon(isRight: isRight),
+        const SizedBox(width: 12),
         Text(
           label,
-          style: const TextStyle(color: Color(0xffb0b6bd), fontSize: 13),
+          style: const TextStyle(
+            color: Color(0xffe0e4e8),
+            fontSize: 14,
+            fontWeight: FontWeight.w400,
+          ),
         ),
       ],
     ),
   );
+}
+
+class _MouseIcon extends StatelessWidget {
+  const _MouseIcon({required this.isRight});
+  final bool isRight;
+
+  @override
+  Widget build(BuildContext context) => CustomPaint(
+    size: const Size(18, 27),
+    painter: _MouseIconPainter(isRight: isRight),
+  );
+}
+
+class _MouseIconPainter extends CustomPainter {
+  const _MouseIconPainter({required this.isRight});
+  final bool isRight;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const strokeColor = Color(0xffa8b0ba);
+    const fillColor = Color(0xffe2e8f0);
+    const cornerRadius = 7.0;
+    final splitY = size.height * 0.42;
+    final splitX = size.width * 0.5;
+
+    final borderPaint = Paint()
+      ..color = strokeColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.6;
+
+    final fillPaint = Paint()
+      ..color = fillColor
+      ..style = PaintingStyle.fill;
+
+    // Fill active button
+    if (!isRight) {
+      canvas.drawRRect(
+        RRect.fromRectAndCorners(
+          Rect.fromLTWH(0, 0, splitX, splitY),
+          topLeft: const Radius.circular(cornerRadius),
+        ),
+        fillPaint,
+      );
+    } else {
+      canvas.drawRRect(
+        RRect.fromRectAndCorners(
+          Rect.fromLTWH(splitX, 0, splitX, splitY),
+          topRight: const Radius.circular(cornerRadius),
+        ),
+        fillPaint,
+      );
+    }
+
+    // Outer capsule outline
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(0, 0, size.width, size.height),
+        const Radius.circular(cornerRadius),
+      ),
+      borderPaint,
+    );
+
+    // Horizontal divider
+    canvas.drawLine(
+      Offset(0, splitY),
+      Offset(size.width, splitY),
+      borderPaint,
+    );
+
+    // Vertical top divider between left & right buttons
+    canvas.drawLine(
+      Offset(splitX, 0),
+      Offset(splitX, splitY),
+      borderPaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _MouseIconPainter oldDelegate) =>
+      oldDelegate.isRight != isRight;
 }

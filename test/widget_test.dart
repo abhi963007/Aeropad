@@ -13,10 +13,10 @@ void main() {
     expect(find.text('Right Click'), findsOneWidget);
   });
 
-  testWidgets('renders disconnected state before native HID events', (
+  testWidgets('renders searching state before network discovery completes', (
     tester,
   ) async {
     await tester.pumpWidget(const AeroPadApp());
-    expect(find.text('Disconnected'), findsOneWidget);
+    expect(find.text('Searching for PC on Wi-Fi...'), findsOneWidget);
   });
 }

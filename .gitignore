@@ -63,3 +63,8 @@ Thumbs.db
 .flutter-plugins
 .flutter-plugins-dependencies
 .packages
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
