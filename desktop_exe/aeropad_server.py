@@ -63,6 +63,8 @@ class AeroPadServer:
         command = packet.get("type")
         self.last_client = client_addr
         self.last_activity_time = time.time()
+        if self.on_client_activity:
+            self.on_client_activity(client_addr)
 
         if command == "move":
             self.mouse.move(int(packet.get("dx", 0)), int(packet.get("dy", 0)))

@@ -95,12 +95,16 @@ class AeroPadTrayApp:
     def __init__(self) -> None:
         self.server = AeroPadServer(on_client_activity=self._on_client_activity)
         self.icon: pystray.Icon | None = None
-        self._last_notification_time = 0.0
+        self._connected_client: str | None = None
+        self._last_activity_time = 0.0
 
     def _on_client_activity(self, client_ip: str) -> None:
         now = time.time()
-        if now - self._last_notification_time > 10.0 and self.icon:
-            self._last_notification_time = now
+        # Only notify ONCE when a new client connects or reconnects after idle (> 2 minutes)
+        is_new_client = (self._connected_client != client_ip)
+        is_reconnect_after_idle = (now - self._last_activity_time > 120.0)
+
+        if (is_new_client or is_reconnect_after_idle) and self.icon:
             try:
                 self.icon.notify(
                     f"AeroPad mobile app connected from {client_ip}",
@@ -108,6 +112,9 @@ class AeroPadTrayApp:
                 )
             except Exception:
                 pass
+
+        self._connected_client = client_ip
+        self._last_activity_time = now
 
     def _make_ip_item(self, address: str) -> pystray.MenuItem:
         def on_copy(icon: pystray.Icon, item: Any) -> None:

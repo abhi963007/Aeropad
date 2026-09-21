@@ -115,7 +115,11 @@ class NetworkMouseClient {
     await discover();
     _discoveryTimer ??= Timer.periodic(
       const Duration(seconds: 2),
-      (_) => discover(),
+      (_) {
+        if (_connected == null) {
+          discover();
+        }
+      },
     );
   }
 
