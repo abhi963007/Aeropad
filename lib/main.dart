@@ -90,10 +90,13 @@ class NetworkMouseClient {
   Timer? _discoveryTimer;
   final _status = StreamController<NetworkStatus>.broadcast();
   final _pcs = StreamController<List<DiscoveredPc>>.broadcast();
+  final Map<String, DiscoveredPc> _discoveredMap = {};
   DiscoveredPc? _connected;
 
   Stream<NetworkStatus> get statuses => _status.stream;
   Stream<List<DiscoveredPc>> get discoveries => _pcs.stream;
+  List<DiscoveredPc> get discoveredPcs => _discoveredMap.values.toList();
+  DiscoveredPc? get connectedPc => _connected;
 
   Future<void> start() async {
     _socket ??= await RawDatagramSocket.bind(
@@ -121,16 +124,14 @@ class NetworkMouseClient {
     final payload = utf8.encode(jsonEncode({'type': 'AEROPAD_DISCOVERY'}));
     final targets = <String>{
       '255.255.255.255',
-      '192.168.137.1',
+      // Universal gateway defaults:
+      '192.168.137.1',   // Windows Mobile Hotspot default gateway
       '192.168.137.255',
-      '192.168.43.1',
+      '192.168.43.1',    // Android Mobile Hotspot default gateway
       '192.168.43.255',
-      '192.168.0.255',
-      '192.168.0.3',
-      '192.168.1.255',
-      '192.168.29.255',
-      '192.168.31.255',
-      '127.0.0.1',
+      '172.20.10.1',     // iOS Personal Hotspot default gateway
+      '172.20.10.15',
+      '127.0.0.1',       // ADB Port Forward / Local loopback
     };
 
     try {
@@ -145,10 +146,29 @@ class NetworkMouseClient {
           final parts = ip.split('.');
           if (parts.length == 4) {
             final subnet = '${parts[0]}.${parts[1]}.${parts[2]}';
+            final lastOctet = int.tryParse(parts[3]) ?? 0;
+
+            // Broadcast and Router/Gateway
             targets.add('$subnet.255');
             targets.add('$subnet.1');
-            for (var i = 2; i <= 25; i++) {
+
+            // Low IP range (common for static configurations / servers)
+            for (var i = 2; i <= 20; i++) {
               targets.add('$subnet.$i');
+            }
+
+            // High DHCP range (typical for consumer Wi-Fi routers: JioFiber, Airtel, TP-Link, Netgear, D-Link)
+            for (var i = 100; i <= 125; i++) {
+              targets.add('$subnet.$i');
+            }
+
+            // Adjacent IP range around the phone's own assigned IP (±10)
+            if (lastOctet > 1) {
+              final start = (lastOctet - 10).clamp(2, 254);
+              final end = (lastOctet + 10).clamp(2, 254);
+              for (var i = start; i <= end; i++) {
+                targets.add('$subnet.$i');
+              }
             }
           }
         }
@@ -182,8 +202,18 @@ class NetworkMouseClient {
         address: sourceAddress,
         port: (packet['port'] as num?)?.toInt() ?? commandPort,
       );
-      if (_connected?.address != sourceAddress) {
-        _pcs.add([pc]);
+
+      final isNewOrUpdated = !_discoveredMap.containsKey(sourceAddress) ||
+          _discoveredMap[sourceAddress]?.name != pc.name;
+      _discoveredMap[sourceAddress] = pc;
+
+      if (isNewOrUpdated) {
+        _pcs.add(_discoveredMap.values.toList());
+      }
+
+      // Auto-connect to the first discovered PC only if we are currently disconnected.
+      // This prevents connection flapping if multiple PCs run AeroPad on the same network!
+      if (_connected == null) {
         connect(pc);
       }
     } catch (_) {
@@ -201,6 +231,8 @@ class NetworkMouseClient {
 
   Future<void> connectManual(String address, int port) async {
     final pc = DiscoveredPc(name: address, address: address, port: port);
+    _discoveredMap[address] = pc;
+    _pcs.add(_discoveredMap.values.toList());
     await connect(pc);
     send({'type': 'move', 'dx': 0, 'dy': 0});
   }
@@ -755,17 +787,18 @@ class _SettingsPageState extends State<SettingsPage> {
   late final _portController = TextEditingController(
     text: SettingsService.manualPort.toString(),
   );
-  DiscoveredPc? _discovered;
+  List<DiscoveredPc> _discoveredPcs = [];
   StreamSubscription<List<DiscoveredPc>>? _discoverySubscription;
   bool _isScanning = false;
 
   @override
   void initState() {
     super.initState();
+    _discoveredPcs = widget.network.discoveredPcs;
     _discoverySubscription = widget.network.discoveries.listen((pcs) {
-      if (mounted && pcs.isNotEmpty) {
+      if (mounted) {
         setState(() {
-          _discovered = pcs.first;
+          _discoveredPcs = List.from(pcs);
           _isScanning = false;
         });
       }
@@ -868,7 +901,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       color: Color(0xff6e7681),
                       fontSize: 13,
                     ),
-                    hintText: '192.168.0.3',
+                    hintText: 'e.g. 192.168.1.100',
                     hintStyle: const TextStyle(
                       color: Color(0xff4a505b),
                     ),
@@ -1061,140 +1094,172 @@ class _SettingsPageState extends State<SettingsPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (_discovered != null) ...[
-                  Builder(
-                    builder: (context) {
-                      final isCurrentPcConnected = widget.connected &&
-                          (widget.connectedAddress == _discovered!.address ||
-                              widget.connectedAddress == _discovered!.name);
-                      return Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xff0d0e12),
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(
-                            color: isCurrentPcConnected
-                                ? const Color(0xff1b3323)
-                                : const Color(0xff1e2229),
-                          ),
+                if (_discoveredPcs.isNotEmpty) ...[
+                  ..._discoveredPcs.map((pc) {
+                    final isCurrentPcConnected = widget.connected &&
+                        (widget.connectedAddress == pc.address ||
+                            widget.connectedAddress == pc.name);
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xff0d0e12),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: isCurrentPcConnected
+                              ? const Color(0xff1b3323)
+                              : const Color(0xff1e2229),
                         ),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 38,
-                              height: 38,
-                              decoration: BoxDecoration(
-                                color: isCurrentPcConnected
-                                    ? const Color(0xff12281a)
-                                    : const Color(0xff181a20),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Icon(
-                                Icons.laptop_chromebook_rounded,
-                                color: isCurrentPcConnected
-                                    ? const Color(0xff2ecc71)
-                                    : const Color(0xffa8b0ba),
-                                size: 20,
-                              ),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 38,
+                            height: 38,
+                            decoration: BoxDecoration(
+                              color: isCurrentPcConnected
+                                  ? const Color(0xff12281a)
+                                  : const Color(0xff181a20),
+                              borderRadius: BorderRadius.circular(10),
                             ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    _discovered!.name,
-                                    style: const TextStyle(
-                                      color: Color(0xffe0e4e8),
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
+                            child: Icon(
+                              Icons.laptop_chromebook_rounded,
+                              color: isCurrentPcConnected
+                                  ? const Color(0xff2ecc71)
+                                  : const Color(0xffa8b0ba),
+                              size: 20,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  pc.name,
+                                  style: const TextStyle(
+                                    color: Color(0xffe0e4e8),
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
                                   ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    '${_discovered!.address}:${_discovered!.port}',
-                                    style: const TextStyle(
-                                      color: Color(0xff6e7681),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '${pc.address}:${pc.port}',
+                                  style: const TextStyle(
+                                    color: Color(0xff6e7681),
+                                    fontSize: 11,
+                                    fontFamily: 'monospace',
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (isCurrentPcConnected) ...[
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xff12281a),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    width: 6,
+                                    height: 6,
+                                    decoration: const BoxDecoration(
+                                      color: Color(0xff2ecc71),
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 5),
+                                  const Text(
+                                    'Connected',
+                                    style: TextStyle(
+                                      color: Color(0xff2ecc71),
                                       fontSize: 11,
-                                      fontFamily: 'monospace',
+                                      fontWeight: FontWeight.w500,
                                     ),
                                   ),
                                 ],
                               ),
                             ),
-                            if (isCurrentPcConnected) ...[
-                              Container(
+                            const SizedBox(width: 6),
+                            IconButton(
+                              onPressed: widget.network.disconnect,
+                              tooltip: 'Disconnect',
+                              icon: const Icon(
+                                Icons.link_off_rounded,
+                                color: Color(0xffef4444),
+                                size: 18,
+                              ),
+                            ),
+                          ] else
+                            OutlinedButton(
+                              onPressed: () => widget.network.connect(pc),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: const Color(0xffe0e4e8),
+                                side: const BorderSide(
+                                  color: Color(0xff282c35),
+                                ),
                                 padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 4,
+                                  horizontal: 14,
+                                  vertical: 8,
                                 ),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xff12281a),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Container(
-                                      width: 6,
-                                      height: 6,
-                                      decoration: const BoxDecoration(
-                                        color: Color(0xff2ecc71),
-                                        shape: BoxShape.circle,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 5),
-                                    const Text(
-                                      'Connected',
-                                      style: TextStyle(
-                                        color: Color(0xff2ecc71),
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                  ],
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
                                 ),
                               ),
-                              const SizedBox(width: 6),
-                              IconButton(
-                                onPressed: widget.network.disconnect,
-                                tooltip: 'Disconnect',
-                                icon: const Icon(
-                                  Icons.link_off_rounded,
-                                  color: Color(0xffef4444),
-                                  size: 18,
-                                ),
+                              child: const Text(
+                                'Connect',
+                                style: TextStyle(fontSize: 12),
                               ),
-                            ] else
-                              OutlinedButton(
-                                onPressed: () =>
-                                    widget.network.connect(_discovered!),
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: const Color(0xffe0e4e8),
-                                  side: const BorderSide(
-                                    color: Color(0xff282c35),
-                                  ),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 14,
-                                    vertical: 8,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                ),
-                                child: const Text(
-                                  'Connect',
-                                  style: TextStyle(fontSize: 12),
-                                ),
-                              ),
-                          ],
+                            ),
+                        ],
+                      ),
+                    );
+                  }),
+                  const SizedBox(height: 4),
+                ] else ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xff0d0e12),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xff1c1f26)),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          _isScanning
+                              ? Icons.radar_rounded
+                              : Icons.wifi_find_rounded,
+                          color: const Color(0xff6e7681),
+                          size: 22,
                         ),
-                      );
-                    },
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            _isScanning
+                                ? 'Scanning local network for PCs...'
+                                : 'No PCs detected yet. Tap Auto-Discover to scan.',
+                            style: const TextStyle(
+                              color: Color(0xff8a909a),
+                              fontSize: 12,
+                              height: 1.3,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 12),
                 ],
                 Row(
                   children: [
@@ -1210,24 +1275,15 @@ class _SettingsPageState extends State<SettingsPage> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: _ActionButton(
-                        icon: Icons.wifi_rounded,
-                        label: 'Wi-Fi (192.168.0.3)',
+                        icon: Icons.router_outlined,
+                        label: 'Hotspot (192.168.137.1)',
                         onTap: () => widget.network.connectManual(
-                          '192.168.0.3',
+                          '192.168.137.1',
                           8989,
                         ),
                       ),
                     ),
                   ],
-                ),
-                const SizedBox(height: 8),
-                _ActionButton(
-                  icon: Icons.router_outlined,
-                  label: 'Hotspot Gateway (192.168.137.1)',
-                  onTap: () => widget.network.connectManual(
-                    '192.168.137.1',
-                    8989,
-                  ),
                 ),
               ],
             ),
